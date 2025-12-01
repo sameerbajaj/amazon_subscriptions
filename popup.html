@@ -1,20 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Amazon Subscription Canceler</title>
   <link rel="stylesheet" href="popup.css">
 </head>
+
 <body>
   <div class="container">
     <!-- Header -->
     <header class="header">
       <div class="logo">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" />
+          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" />
+          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+            stroke-linejoin="round" />
         </svg>
         <h1>Subscription Canceler</h1>
       </div>
@@ -29,6 +34,9 @@
           <p id="statusMessage">Please wait while we detect subscriptions</p>
         </div>
       </div>
+      <button class="btn btn-primary" id="openPageBtn" style="display: none; margin-top: 16px;">
+        Open Subscriptions Page
+      </button>
     </div>
 
     <!-- Subscriptions List -->
@@ -37,7 +45,7 @@
         <h2>Detected Subscriptions</h2>
         <span class="count-badge" id="countBadge">0</span>
       </div>
-      
+
       <div class="subscriptions-list" id="subscriptionsList">
         <!-- Subscriptions will be inserted here -->
       </div>
@@ -92,4 +100,5 @@
 
   <script src="popup.js"></script>
 </body>
+
 </html>

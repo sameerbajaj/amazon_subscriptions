@@ -21,6 +21,7 @@ const summarySection = document.getElementById('summarySection');
 const successCount = document.getElementById('successCount');
 const failedCount = document.getElementById('failedCount');
 const resetBtn = document.getElementById('resetBtn');
+const openPageBtn = document.getElementById('openPageBtn');
 
 // Initialize
 async function init() {
@@ -29,12 +30,20 @@ async function init() {
 
     // Check if on Amazon subscriptions page
     if (!tab.url || !tab.url.includes('amazon.com')) {
-      showError('Not on Amazon', 'Please navigate to your Amazon Subscribe & Save page first.');
+      showError(
+        'Not on Amazon',
+        'Please navigate to Amazon first, then click the button below.',
+        true
+      );
       return;
     }
 
     if (!tab.url.includes('subscribe-and-save') && !tab.url.includes('auto-deliveries')) {
-      showError('Wrong Page', 'Please go to: Amazon.com → Account & Lists → Subscribe & Save');
+      showError(
+        'Wrong Page',
+        'You need to be on the Subscribe & Save page. Click below to open it.',
+        true
+      );
       return;
     }
 
@@ -42,7 +51,7 @@ async function init() {
     await detectSubscriptions(tab.id);
 
   } catch (error) {
-    showError('Error', error.message);
+    showError('Error', error.message, false);
   }
 }
 
@@ -74,14 +83,14 @@ async function detectSubscriptions(tabId) {
     subscriptions = results[0].result;
 
     if (subscriptions.length === 0) {
-      showWarning('No Subscriptions', 'No subscriptions found on this page. Make sure you\'re on the subscriptions list page.');
+      showSuccess();
       return;
     }
 
     showSubscriptions();
 
   } catch (error) {
-    showError('Detection Failed', error.message);
+    showError('Detection Failed', error.message, false);
   }
 }
 
@@ -94,20 +103,31 @@ function showSubscriptions() {
   countBadge.textContent = subscriptions.length;
 
   subscriptionsList.innerHTML = subscriptions.map((sub, index) => `
-    <div class="subscription-item" data-index="${index}">
-      <div class="subscription-title">${escapeHtml(sub.title.substring(0, 80))}${sub.title.length > 80 ? '...' : ''}</div>
-      <div class="subscription-meta">${sub.quantity} × ${sub.frequency}</div>
+    <div class="subscription-item" data-index="${index}" data-sub-id="${sub.subscriptionId}">
+      <div class="subscription-content">
+        <div class="subscription-title">${escapeHtml(sub.title.substring(0, 80))}${sub.title.length > 80 ? '...' : ''}</div>
+        <div class="subscription-meta">${sub.quantity} × ${sub.frequency}</div>
+      </div>
+      <div class="subscription-actions">
+        <button class="btn-small btn-cancel" data-index="${index}">Cancel</button>
+      </div>
     </div>
   `).join('');
+
+  // Add event listeners to individual cancel buttons
+  document.querySelectorAll('.btn-cancel').forEach(btn => {
+    btn.addEventListener('click', handleIndividualCancel);
+  });
 }
 
 // Show different status messages
-function showError(title, message) {
+function showError(title, message, showButton) {
   const card = statusSection.querySelector('.status-card');
   card.className = 'status-card error';
   statusIcon.textContent = '❌';
   statusTitle.textContent = title;
   statusMessage.textContent = message;
+  openPageBtn.style.display = showButton ? 'block' : 'none';
 }
 
 function showWarning(title, message) {
@@ -116,6 +136,98 @@ function showWarning(title, message) {
   statusIcon.textContent = '⚠️';
   statusTitle.textContent = title;
   statusMessage.textContent = message;
+  openPageBtn.style.display = 'none';
+}
+
+function showSuccess() {
+  const card = statusSection.querySelector('.status-card');
+  card.className = 'status-card success';
+  statusIcon.textContent = '🎉';
+  statusTitle.textContent = 'No Active Subscriptions!';
+  statusMessage.textContent = 'You don\'t have any active Subscribe & Save subscriptions. You\'re all set!';
+  openPageBtn.style.display = 'none';
+}
+
+// Open subscriptions page button
+openPageBtn.addEventListener('click', () => {
+  chrome.tabs.create({
+    url: 'https://www.amazon.com/gp/subscribe-and-save/manager/viewsubscriptions'
+  });
+});
+
+// Handle individual cancel button click
+async function handleIndividualCancel(event) {
+  const btn = event.target;
+  const index = parseInt(btn.getAttribute('data-index'));
+  const sub = subscriptions[index];
+
+  if (!sub || isProcessing) return;
+
+  // Show confirmation
+  if (!confirm(`Cancel this subscription?\n\n${sub.title.substring(0, 100)}${sub.title.length > 100 ? '...' : ''}`)) {
+    return;
+  }
+
+  // Disable button and mark as canceling
+  btn.disabled = true;
+  btn.textContent = 'Canceling...';
+  const item = document.querySelector(`[data-index="${index}"]`);
+  if (item) item.classList.add('canceling');
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  try {
+    const result = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: cancelSingleSubscription,
+      args: [sub.subscriptionId]
+    });
+
+    if (result[0].result.success) {
+      // Remove from UI
+      if (item) {
+        item.classList.remove('canceling');
+        item.classList.add('canceled');
+        setTimeout(() => {
+          item.style.height = item.offsetHeight + 'px';
+          item.style.overflow = 'hidden';
+          item.style.transition = 'all 0.3s ease';
+          setTimeout(() => {
+            item.style.height = '0';
+            item.style.padding = '0';
+            item.style.margin = '0';
+            item.style.borderWidth = '0';
+          }, 10);
+          setTimeout(() => item.remove(), 300);
+        }, 500);
+      }
+
+      // Remove from subscriptions array
+      subscriptions.splice(index, 1);
+
+      // Update count
+      countBadge.textContent = subscriptions.length;
+
+      // Check if all canceled
+      if (subscriptions.length === 0) {
+        setTimeout(async () => {
+          // Auto-refresh to show success message
+          await detectSubscriptions(tab.id);
+        }, 1000);
+      }
+    } else {
+      // Failed - revert UI
+      btn.disabled = false;
+      btn.textContent = 'Cancel';
+      if (item) item.classList.remove('canceling');
+      alert('Failed to cancel subscription. Please try again.');
+    }
+  } catch (error) {
+    btn.disabled = false;
+    btn.textContent = 'Cancel';
+    if (item) item.classList.remove('canceling');
+    alert('Error: ' + error.message);
+  }
 }
 
 // Test cancel one subscription
@@ -143,7 +255,7 @@ cancelAllBtn.addEventListener('click', async () => {
   subscriptionsSection.style.display = 'none';
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  await cancelSubscriptions(tab.id, subscriptions, false);
+  await cancelSubscriptions(tab.id, subscriptions.slice(), false);
 });
 
 // Cancel subscriptions
@@ -153,6 +265,7 @@ async function cancelSubscriptions(tabId, subsToCancel, isTest) {
 
   let successfulCancels = 0;
   let failedCancels = 0;
+  const canceledItems = [];
 
   for (let i = 0; i < subsToCancel.length; i++) {
     const sub = subsToCancel[i];
@@ -172,6 +285,7 @@ async function cancelSubscriptions(tabId, subsToCancel, isTest) {
 
       if (result[0].result.success) {
         successfulCancels++;
+        canceledItems.push(sub);
         addLog(`✓ ${sub.title.substring(0, 50)}`, 'success');
 
         // Mark as canceled in list
@@ -192,15 +306,60 @@ async function cancelSubscriptions(tabId, subsToCancel, isTest) {
     }
   }
 
-  // Show summary
+  // Show summary with canceled items
+  showSummary(successfulCancels, failedCancels, canceledItems);
+
+  // Auto-refresh after 3 seconds if all were successful
+  if (successfulCancels > 0 && failedCancels === 0) {
+    setTimeout(async () => {
+      progressSection.style.display = 'none';
+      summarySection.style.display = 'none';
+      statusSection.style.display = 'block';
+      await detectSubscriptions(tabId);
+    }, 3000);
+  }
+}
+
+// Show summary with list of canceled items
+function showSummary(successful, failed, canceledItems) {
   progressSection.style.display = 'none';
   summarySection.style.display = 'block';
-  successCount.textContent = successfulCancels;
-  failedCount.textContent = failedCancels;
+  successCount.textContent = successful;
+  failedCount.textContent = failed;
+
+  // Add list of canceled items to summary
+  const existingList = summarySection.querySelector('.canceled-list');
+  if (existingList) existingList.remove();
+
+  if (canceledItems.length > 0) {
+    const listDiv = document.createElement('div');
+    listDiv.className = 'canceled-list';
+    listDiv.innerHTML = `
+      <h3 style="font-size: 14px; font-weight: 600; color: #2d3748; margin: 16px 0 8px;">Canceled Items:</h3>
+      <div style="max-height: 200px; overflow-y: auto; background: #f8f9fa; border-radius: 8px; padding: 12px;">
+        ${canceledItems.map(item => `
+          <div style="padding: 6px 0; font-size: 13px; color: #4a5568; border-bottom: 1px solid #e2e8f0;">
+            ✓ ${escapeHtml(item.title.substring(0, 60))}${item.title.length > 60 ? '...' : ''}
+          </div>
+        `).join('')}
+      </div>
+    `;
+    summarySection.insertBefore(listDiv, summarySection.querySelector('.btn'));
+  }
 }
 
 // Function to execute in the page context to cancel a subscription
-// Improved version using form-based approach (inspired by GitHub script)
+// 
+// CREDITS: Form-based cancellation approach inspired by and borrowed from:
+// https://gist.github.com/L422Y/53b75be4bb8afd5cd6143e74150cc142
+// by @L422Y (https://github.com/L422Y)
+//
+// Key improvements from the original script:
+// 1. Uses actual <form> element instead of manual HTML parsing
+// 2. FormData API automatically captures all fields (CSRF token, hidden fields)
+// 3. Submits form data exactly as Amazon expects
+//
+// Our additions: UI, progress tracking, individual cancel, error handling, auto-refresh
 async function cancelSingleSubscription(subscriptionId) {
   try {
     // Fetch the cancel modal

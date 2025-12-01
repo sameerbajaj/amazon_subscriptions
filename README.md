@@ -112,10 +112,42 @@ This extension improves upon the simple console script approach:
 **This Extension:**
 - ✅ Beautiful, user-friendly interface
 - ✅ Real-time progress tracking
+- ✅ Individual + bulk cancel options
 - ✅ Test mode for safety
 - ✅ Error handling and reporting
 - ✅ Easy to install and share
 - ✅ Uses the same reliable form-based approach
+
+## Credits
+
+This extension was inspired by and borrows the **form-based cancellation approach** from:
+
+**[Amazon Subscribe & Save Cancellation Script](https://gist.github.com/L422Y/53b75be4bb8afd5cd6143e74150cc142)** by [@L422Y](https://github.com/L422Y)
+
+### What We Borrowed:
+
+The original script introduced a more reliable cancellation method that we adopted:
+
+1. **Form Element Extraction** - Instead of manually parsing HTML for CSRF tokens and parameters, we fetch the actual `<form>` element from Amazon's cancel modal
+2. **FormData API** - Using `FormData` to automatically capture all form fields (CSRF token, hidden fields, etc.)
+3. **Form Submission** - Submitting the form data exactly as Amazon expects it
+
+### Our Improvements:
+
+While we borrowed the core cancellation logic, we added:
+
+- 🎨 **Beautiful UI** - Professional popup interface instead of console commands
+- 📊 **Progress Tracking** - Real-time progress bars and logs
+- 🧪 **Test Mode** - Try canceling one subscription first
+- ❌ **Individual Cancel** - Cancel specific subscriptions with confirmation
+- 📋 **Subscription List** - See all your subscriptions before canceling
+- ✅ **Summary Report** - Detailed list of what was canceled
+- 🔄 **Auto-Refresh** - Automatically updates to show current state
+- 🔗 **Easy Navigation** - One-click button to open subscriptions page
+- 🎉 **Success States** - Celebratory message when no subscriptions remain
+- 🛡️ **Error Handling** - Clear error messages and recovery options
+
+**Thank you to [@L422Y](https://github.com/L422Y) for the excellent foundation!** 🙏
 
 ## License
 
