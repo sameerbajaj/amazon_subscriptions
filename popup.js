@@ -66,12 +66,71 @@ async function detectSubscriptions(tabId) {
 
         cards.forEach(card => {
           const subscriptionId = card.getAttribute('data-subscription-id');
-          const text = card.textContent;
-          const titleMatch = text.match(/([A-Z].{20,200}?)\s+Next delivery/);
-          const title = titleMatch ? titleMatch[1].trim() : 'Unknown Product';
-          const frequencyMatch = text.match(/(\d+)\s+units?\s+every\s+(\d+\s+\w+)/i);
-          const quantity = frequencyMatch ? frequencyMatch[1] : '1';
-          const frequency = frequencyMatch ? frequencyMatch[2] : 'Unknown';
+          // Normalize whitespace in text for better matching
+          const text = card.textContent.replace(/\s+/g, ' ').trim();
+
+          // Try multiple methods to get the product title
+          let title = 'Unknown Product';
+
+          // Method 1: Look for img alt text (often has product name)
+          const img = card.querySelector('img[alt]');
+          if (img && img.alt.length > 20) {
+            title = img.alt;
+          }
+
+          // Method 2: Look for product title element (but filter out short text)
+          if (title === 'Unknown Product') {
+            const titleElements = card.querySelectorAll('.product-title, [id*="product-title"], .a-size-base-plus, .a-text-bold, a');
+            for (const el of titleElements) {
+              const elText = el.textContent.trim();
+              // Must be longer than 20 chars and not contain certain keywords
+              if (elText.length > 20 &&
+                !elText.includes('Saving') &&
+                !elText.includes('Edit') &&
+                !elText.includes('Cancel') &&
+                !elText.includes('Next delivery')) {
+                title = elText;
+                break;
+              }
+            }
+          }
+
+          // Method 3: Extract from text using "Next delivery" marker
+          if (title === 'Unknown Product') {
+            const match = text.match(/([A-Z].{20,250}?)\s+Next delivery/);
+            if (match) {
+              title = match[1].trim();
+            }
+          }
+
+          // Extract quantity and frequency
+          let quantity = '1';
+          let frequency = 'Unknown';
+
+          // Try multiple patterns for frequency
+          // Pattern 1: "1 x 6 months" or "2 x 3 months"
+          let match = text.match(/(\d+)\s*x\s*(\d+\s+\w+)/i);
+          if (match) {
+            quantity = match[1];
+            frequency = match[2];
+          }
+
+          // Pattern 2: "1 unit every 6 months" or "2 units every 3 months"
+          if (frequency === 'Unknown') {
+            match = text.match(/(\d+)\s+units?\s+every\s+(\d+\s+\w+)/i);
+            if (match) {
+              quantity = match[1];
+              frequency = match[2];
+            }
+          }
+
+          // Pattern 3: Just "6 months" or "3 months" (quantity defaults to 1)
+          if (frequency === 'Unknown') {
+            match = text.match(/(\d+\s+(?:month|week|day)s?)/i);
+            if (match) {
+              frequency = match[1];
+            }
+          }
 
           subs.push({ subscriptionId, title, quantity, frequency });
         });
@@ -100,19 +159,41 @@ function showSubscriptions() {
   subscriptionsSection.style.display = 'block';
   actionButtons.style.display = 'flex';
 
+  // Remove duplicates based on subscriptionId
+  const uniqueSubs = [];
+  const seenIds = new Set();
+
+  subscriptions.forEach(sub => {
+    if (!seenIds.has(sub.subscriptionId)) {
+      seenIds.add(sub.subscriptionId);
+      uniqueSubs.push(sub);
+    }
+  });
+
+  subscriptions = uniqueSubs;
   countBadge.textContent = subscriptions.length;
 
-  subscriptionsList.innerHTML = subscriptions.map((sub, index) => `
-    <div class="subscription-item" data-index="${index}" data-sub-id="${sub.subscriptionId}">
-      <div class="subscription-content">
-        <div class="subscription-title">${escapeHtml(sub.title.substring(0, 80))}${sub.title.length > 80 ? '...' : ''}</div>
-        <div class="subscription-meta">${sub.quantity} × ${sub.frequency}</div>
+  subscriptionsList.innerHTML = subscriptions.map((sub, index) => {
+    // Clean the title - remove any HTML tags and extra whitespace
+    const cleanTitle = sub.title
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/\s+/g, ' ')     // Normalize whitespace
+      .trim();
+
+    const displayTitle = cleanTitle.substring(0, 80) + (cleanTitle.length > 80 ? '...' : '');
+
+    return `
+      <div class="subscription-item" data-index="${index}" data-sub-id="${escapeHtml(sub.subscriptionId)}">
+        <div class="subscription-content">
+          <div class="subscription-title">${escapeHtml(displayTitle)}</div>
+          <div class="subscription-meta">${escapeHtml(sub.quantity)} × ${escapeHtml(sub.frequency)}</div>
+        </div>
+        <div class="subscription-actions">
+          <button class="btn-small btn-cancel" data-index="${index}">Cancel</button>
+        </div>
       </div>
-      <div class="subscription-actions">
-        <button class="btn-small btn-cancel" data-index="${index}">Cancel</button>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   // Add event listeners to individual cancel buttons
   document.querySelectorAll('.btn-cancel').forEach(btn => {
@@ -151,7 +232,7 @@ function showSuccess() {
 // Open subscriptions page button
 openPageBtn.addEventListener('click', () => {
   chrome.tabs.create({
-    url: 'https://www.amazon.com/gp/subscribe-and-save/manager/viewsubscriptions'
+    url: 'https://www.amazon.com/auto-deliveries/subscriptionList'
   });
 });
 
