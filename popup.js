@@ -265,37 +265,35 @@ async function handleIndividualCancel(event) {
     });
 
     if (result[0].result.success) {
-      // Remove from UI
+      // Mark as canceled with animation
       if (item) {
         item.classList.remove('canceling');
         item.classList.add('canceled');
-        setTimeout(() => {
-          item.style.height = item.offsetHeight + 'px';
-          item.style.overflow = 'hidden';
-          item.style.transition = 'all 0.3s ease';
-          setTimeout(() => {
-            item.style.height = '0';
-            item.style.padding = '0';
-            item.style.margin = '0';
-            item.style.borderWidth = '0';
-          }, 10);
-          setTimeout(() => item.remove(), 300);
-        }, 500);
       }
 
-      // Remove from subscriptions array
-      subscriptions.splice(index, 1);
+      // Show brief success message
+      btn.textContent = '✓ Canceled';
 
-      // Update count
-      countBadge.textContent = subscriptions.length;
+      // Wait 1 second, then reload Amazon page and re-detect
+      setTimeout(async () => {
+        // Reload the Amazon page to get fresh data
+        await chrome.tabs.reload(tab.id);
 
-      // Check if all canceled
-      if (subscriptions.length === 0) {
+        // Wait for page to load
         setTimeout(async () => {
-          // Auto-refresh to show success message
+          // Re-detect subscriptions
+          statusSection.style.display = 'block';
+          subscriptionsSection.style.display = 'none';
+          actionButtons.style.display = 'none';
+
+          statusIcon.textContent = '⏳';
+          statusTitle.textContent = 'Refreshing...';
+          statusMessage.textContent = 'Checking for remaining subscriptions...';
+
           await detectSubscriptions(tab.id);
-        }, 1000);
-      }
+        }, 1500); // Wait 1.5 seconds for page to reload
+      }, 1000);
+
     } else {
       // Failed - revert UI
       btn.disabled = false;
@@ -390,14 +388,28 @@ async function cancelSubscriptions(tabId, subsToCancel, isTest) {
   // Show summary with canceled items
   showSummary(successfulCancels, failedCancels, canceledItems);
 
-  // Auto-refresh after 3 seconds if all were successful
-  if (successfulCancels > 0 && failedCancels === 0) {
+  // Auto-refresh Amazon page after showing summary briefly
+  if (successfulCancels > 0) {
     setTimeout(async () => {
-      progressSection.style.display = 'none';
-      summarySection.style.display = 'none';
-      statusSection.style.display = 'block';
-      await detectSubscriptions(tabId);
-    }, 3000);
+      // Reload the Amazon page
+      await chrome.tabs.reload(tabId);
+
+      // Wait for page to load, then re-detect
+      setTimeout(async () => {
+        progressSection.style.display = 'none';
+        summarySection.style.display = 'none';
+        statusSection.style.display = 'block';
+
+        statusIcon.textContent = '⏳';
+        statusTitle.textContent = 'Refreshing...';
+        statusMessage.textContent = 'Checking for remaining subscriptions...';
+
+        await detectSubscriptions(tabId);
+        isProcessing = false;
+      }, 1500); // Wait 1.5 seconds for page reload
+    }, 2500); // Show summary for 2.5 seconds
+  } else {
+    isProcessing = false;
   }
 }
 
