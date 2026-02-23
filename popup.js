@@ -428,10 +428,10 @@ function showSummary(successful, failed, canceledItems) {
     const listDiv = document.createElement('div');
     listDiv.className = 'canceled-list';
     listDiv.innerHTML = `
-      <h3 style="font-size: 14px; font-weight: 600; color: #2d3748; margin: 16px 0 8px;">Canceled Items:</h3>
-      <div style="max-height: 200px; overflow-y: auto; background: #f8f9fa; border-radius: 8px; padding: 12px;">
+      <h3 class="canceled-list-heading">Canceled Items</h3>
+      <div class="canceled-list-scroll">
         ${canceledItems.map(item => `
-          <div style="padding: 6px 0; font-size: 13px; color: #4a5568; border-bottom: 1px solid #e2e8f0;">
+          <div class="canceled-list-item">
             ✓ ${escapeHtml(item.title.substring(0, 60))}${item.title.length > 60 ? '...' : ''}
           </div>
         `).join('')}

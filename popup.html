@@ -5,24 +5,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Amazon Subscription Canceler</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="popup.css">
 </head>
 
 <body>
+  <!-- Ambient background glow -->
+  <div class="bg-glow"></div>
+  <div class="bg-noise"></div>
+
   <div class="container">
     <!-- Header -->
     <header class="header">
       <div class="logo">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-          <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" />
-          <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" />
-          <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-            stroke-linejoin="round" />
-        </svg>
-        <h1>Subscription Canceler</h1>
+        <div class="logo-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7.5 12L3 7.5M3 7.5L7.5 3M3 7.5H16.5C17.6935 7.5 18.8381 7.97411 19.682 8.81802C20.5259 9.66193 21 10.8065 21 12C21 13.1935 20.5259 14.3381 19.682 15.182C18.8381 16.0259 17.6935 16.5 16.5 16.5H12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <h1>Unsub</h1>
+          <span class="logo-tagline">Amazon S&S Manager</span>
+        </div>
       </div>
+      <div class="header-accent"></div>
     </header>
 
     <!-- Status Section -->
@@ -30,11 +38,16 @@
       <div class="status-card">
         <div class="status-icon" id="statusIcon">⏳</div>
         <div class="status-text">
-          <h3 id="statusTitle">Checking...</h3>
-          <p id="statusMessage">Please wait while we detect subscriptions</p>
+          <h3 id="statusTitle">Scanning...</h3>
+          <p id="statusMessage">Detecting active subscriptions</p>
         </div>
       </div>
       <button class="btn btn-primary" id="openPageBtn" style="display: none; margin-top: 16px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
         Open Subscriptions Page
       </button>
     </div>
@@ -42,7 +55,7 @@
     <!-- Subscriptions List -->
     <div class="subscriptions-section" id="subscriptionsSection" style="display: none;">
       <div class="section-header">
-        <h2>Detected Subscriptions</h2>
+        <h2>Active Subscriptions</h2>
         <span class="count-badge" id="countBadge">0</span>
       </div>
 
@@ -51,11 +64,38 @@
       </div>
     </div>
 
+    <!-- Action Buttons -->
+    <div class="actions" id="actionButtons" style="display: none;">
+      <button class="btn btn-ghost" id="testBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+        Test One
+      </button>
+      <button class="btn btn-danger" id="cancelAllBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+          <line x1="10" y1="11" x2="10" y2="17"/>
+          <line x1="14" y1="11" x2="14" y2="17"/>
+        </svg>
+        Cancel All
+      </button>
+      <div class="warning-text">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        Permanent action — cannot be undone
+      </div>
+    </div>
+
     <!-- Progress Section -->
     <div class="progress-section" id="progressSection" style="display: none;">
       <div class="progress-header">
-        <h3>Canceling Subscriptions...</h3>
-        <span id="progressText">0 / 0</span>
+        <h3>Canceling...</h3>
+        <span id="progressText" class="progress-counter">0 / 0</span>
       </div>
       <div class="progress-bar">
         <div class="progress-fill" id="progressFill"></div>
@@ -65,34 +105,30 @@
 
     <!-- Summary Section -->
     <div class="summary-section" id="summarySection" style="display: none;">
-      <div class="summary-icon">✅</div>
-      <h2>Cancellation Complete!</h2>
+      <div class="summary-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--mint)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+          <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </div>
+      <h2>All Done</h2>
+      <p class="summary-subtitle">Subscription cleanup complete</p>
       <div class="summary-stats">
-        <div class="stat">
+        <div class="stat stat--success">
           <span class="stat-value" id="successCount">0</span>
           <span class="stat-label">Canceled</span>
         </div>
-        <div class="stat">
+        <div class="stat stat--error">
           <span class="stat-value" id="failedCount">0</span>
           <span class="stat-label">Failed</span>
         </div>
       </div>
-      <button class="btn btn-secondary" id="resetBtn">Done</button>
-    </div>
-
-    <!-- Action Buttons -->
-    <div class="actions" id="actionButtons" style="display: none;">
-      <button class="btn btn-secondary" id="testBtn">
-        <span>🧪</span>
-        Test Cancel One
+      <button class="btn btn-primary" id="resetBtn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Done
       </button>
-      <button class="btn btn-primary" id="cancelAllBtn">
-        <span>🗑️</span>
-        Cancel All Subscriptions
-      </button>
-      <div class="warning-text">
-        ⚠️ This will permanently cancel subscriptions
-      </div>
     </div>
   </div>
 
