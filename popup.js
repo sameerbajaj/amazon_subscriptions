@@ -9,6 +9,7 @@ let subscriptions = [];
 let filteredSubscriptions = [];
 let selectedSubIds = new Set();
 let isProcessing = false;
+let currentSortMode = 'date-asc'; // Default sort: upcoming/soonest delivery first
 
 // DOM Elements
 const headerBadge = document.getElementById('headerBadge');
@@ -31,6 +32,7 @@ const emptyRefreshBtn = document.getElementById('emptyRefreshBtn');
 const subscriptionsSection = document.getElementById('subscriptionsSection');
 const countBadge = document.getElementById('countBadge');
 const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+const sortSelect = document.getElementById('sortSelect');
 const searchWrap = document.getElementById('searchWrap');
 const searchFilter = document.getElementById('searchFilter');
 const subscriptionsList = document.getElementById('subscriptionsList');
@@ -71,17 +73,7 @@ function showView(viewId) {
   });
 }
 
-// Check whether current URL is Amazon S&S
-function isSubscribeAndSaveUrl(url) {
-  if (!url) return false;
-  const lower = url.toLowerCase();
-  return lower.includes('auto-deliveries') ||
-         lower.includes('subscribe-and-save') ||
-         lower.includes('/sns') ||
-         lower.includes('/hz/subscription');
-}
-
-// Check whether current URL is any Amazon page
+// Check whether current URL is Amazon
 function isAmazonUrl(url) {
   if (!url) return false;
   return url.toLowerCase().includes('amazon.com');
@@ -102,7 +94,7 @@ async function init() {
       showNavPrompt(
         'Open Amazon',
         'Navigate to Amazon to view your Subscribe & Save deliveries.',
-        'Open Amazon',
+        'Open Amazon S&S',
         false
       );
       return;
@@ -121,18 +113,35 @@ async function init() {
       return;
     }
 
-    // Case 2: On Amazon, but not on S&S dashboard
-    if (!isSubscribeAndSaveUrl(tab.url)) {
-      showNavPrompt(
-        'Go to Subscriptions Dashboard',
-        'You are on Amazon! Jump directly to your Subscribe & Save manager in one click.',
-        'Go to Subscriptions',
-        true
-      );
+    // Case 2: On Amazon, but not on the actual subscriptionList tab
+    if (!tab.url.toLowerCase().includes('subscriptionlist')) {
+      showView('loadingSection');
+      loadingTitle.textContent = 'Opening Your Subscriptions...';
+      loadingSubtitle.textContent = 'Navigating to the active subscriptions dashboard';
+      headerBadge.textContent = 'Loading';
+
+      await chrome.tabs.update(activeTabId, {
+        url: 'https://www.amazon.com/auto-deliveries/subscriptionList'
+      });
+
+      let navigated = false;
+      const onUpdated = (tabId, info) => {
+        if (tabId === activeTabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(onUpdated);
+          navigated = true;
+          setTimeout(() => startDetection(activeTabId), 900);
+        }
+      };
+      chrome.tabs.onUpdated.addListener(onUpdated);
+
+      // Fallback timeout in case onUpdated listener doesn't trigger
+      setTimeout(() => {
+        if (!navigated) startDetection(activeTabId);
+      }, 3500);
       return;
     }
 
-    // Case 3: Already on S&S page -> Scan subscriptions immediately!
+    // Case 3: Already on subscriptionList page -> Scan subscriptions immediately!
     await startDetection(tab.id);
 
   } catch (err) {
@@ -161,21 +170,20 @@ function showNavPrompt(title, message, btnText, isCurrentTabNav) {
       loadingTitle.textContent = 'Navigating...';
       loadingSubtitle.textContent = 'Loading your Subscribe & Save dashboard';
 
-      await chrome.tabs.update(activeTabId, { url: 'https://www.amazon.com/auto-deliveries' });
+      await chrome.tabs.update(activeTabId, {
+        url: 'https://www.amazon.com/auto-deliveries/subscriptionList'
+      });
 
-      // Listen for tab load completion
       const onUpdated = (tabId, info) => {
         if (tabId === activeTabId && info.status === 'complete') {
           chrome.tabs.onUpdated.removeListener(onUpdated);
-          setTimeout(() => startDetection(activeTabId), 1000);
+          setTimeout(() => startDetection(activeTabId), 900);
         }
       };
       chrome.tabs.onUpdated.addListener(onUpdated);
-
-      // Fallback timeout in case onUpdated was missed
-      setTimeout(() => startDetection(activeTabId), 4000);
+      setTimeout(() => startDetection(activeTabId), 3500);
     } else {
-      chrome.tabs.create({ url: 'https://www.amazon.com/auto-deliveries' });
+      chrome.tabs.create({ url: 'https://www.amazon.com/auto-deliveries/subscriptionList' });
       window.close();
     }
   };
@@ -202,7 +210,7 @@ async function startDetection(tabId) {
       return;
     }
 
-    filteredSubscriptions = subscriptions.slice();
+    applyFilterAndSort();
     selectedSubIds = new Set(subscriptions.map(s => s.subscriptionId));
 
     renderSubscriptionsView();
@@ -231,7 +239,7 @@ function renderSubscriptionsView() {
   headerBadge.textContent = `${subscriptions.length} Active`;
   headerBadge.classList.add('active');
 
-  // Only show search bar if there are more than 3 subscriptions
+  // Show search bar if there are more than 3 subscriptions
   if (subscriptions.length > 3) {
     searchWrap.style.display = 'block';
   } else {
@@ -240,6 +248,46 @@ function renderSubscriptionsView() {
 
   renderItemList();
   updateActionButtons();
+}
+
+// Helper: Sort list by currentSortMode
+function sortSubscriptionsList(list, mode) {
+  const sorted = [...list];
+  switch (mode) {
+    case 'date-asc':
+      // Soonest delivery first (e.g. Oct 19 before Nov 19)
+      sorted.sort((a, b) => (a.dateTimestamp || Infinity) - (b.dateTimestamp || Infinity));
+      break;
+    case 'date-desc':
+      // Farthest delivery first
+      sorted.sort((a, b) => (b.dateTimestamp || 0) - (a.dateTimestamp || 0));
+      break;
+    case 'title-asc':
+      sorted.sort((a, b) => a.title.localeCompare(b.title));
+      break;
+    case 'title-desc':
+      sorted.sort((a, b) => b.title.localeCompare(a.title));
+      break;
+    default:
+      break;
+  }
+  return sorted;
+}
+
+// Apply Search Filter and Sort Order
+function applyFilterAndSort() {
+  const query = searchFilter ? searchFilter.value.toLowerCase().trim() : '';
+
+  let list = subscriptions;
+  if (query) {
+    list = subscriptions.filter(sub =>
+      sub.title.toLowerCase().includes(query) ||
+      (sub.frequency && sub.frequency.toLowerCase().includes(query)) ||
+      (sub.deliveryDate && sub.deliveryDate.toLowerCase().includes(query))
+    );
+  }
+
+  filteredSubscriptions = sortSubscriptionsList(list, currentSortMode);
 }
 
 // Render subscription items into DOM
@@ -260,6 +308,7 @@ function renderItemList() {
     const cleanTitle = escapeHtml(sub.title);
     const cleanFrequency = escapeHtml(sub.frequency || 'Auto-Delivery');
     const cleanQuantity = escapeHtml(sub.quantity || '1');
+    const cleanDate = sub.deliveryDate ? escapeHtml(sub.deliveryDate) : '';
 
     return `
       <div class="sub-item ${isSelected ? 'selected' : ''}" data-id="${escapeHtml(sub.subscriptionId)}">
@@ -267,6 +316,7 @@ function renderItemList() {
         <div class="sub-item-body">
           <div class="sub-item-title">${cleanTitle}</div>
           <div class="sub-item-meta">
+            ${cleanDate ? `<span class="sub-meta-pill sub-meta-date">📅 ${cleanDate}</span>` : ''}
             <span class="sub-meta-pill">📦 ${cleanQuantity} unit</span>
             <span class="sub-meta-pill">⏱ ${cleanFrequency}</span>
           </div>
@@ -346,14 +396,20 @@ function updateSelectAllCheckbox() {
   selectAllCheckbox.checked = allSelected;
 }
 
+// Sort Selection Change Listener
+if (sortSelect) {
+  sortSelect.addEventListener('change', (e) => {
+    currentSortMode = e.target.value;
+    applyFilterAndSort();
+    renderItemList();
+    updateSelectAllCheckbox();
+  });
+}
+
 // Search Filter Input
 if (searchFilter) {
-  searchFilter.addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase().trim();
-    filteredSubscriptions = subscriptions.filter(sub =>
-      sub.title.toLowerCase().includes(q) ||
-      (sub.frequency && sub.frequency.toLowerCase().includes(q))
-    );
+  searchFilter.addEventListener('input', () => {
+    applyFilterAndSort();
     renderItemList();
     updateSelectAllCheckbox();
   });
@@ -456,7 +512,8 @@ async function executeCancellation(itemsToCancel) {
         selectedSubIds.delete(sub.subscriptionId);
       } else {
         failedCountNum++;
-        addProgressRow(`✗ Failed: ${sub.title.substring(0, 34)}`, 'error');
+        const failReason = res && res.error ? ` (${res.error})` : '';
+        addProgressRow(`✗ Failed: ${sub.title.substring(0, 30)}${failReason}`, 'error');
       }
     } catch (err) {
       console.error('Cancellation error for item:', sub.subscriptionId, err);
@@ -522,79 +579,167 @@ function showSummaryView(successCountTotal, failedCountTotal, canceledItems) {
 }
 
 // Scraper function executed within Amazon page context
-function scanAmazonPageForSubscriptions() {
+async function scanAmazonPageForSubscriptions() {
+  let doc = document;
+
+  // Check if real subscription cards exist on current DOM
+  let cards = doc.querySelectorAll('[data-subscription-id], .al-subscription-card, [id*="subscriptionCard"], .subscription-card');
+
+  // If on the upcoming deliveries calendar page (/auto-deliveries) or no cards found,
+  // fetch the official subscriptionList HTML directly in the background with user credentials!
+  if (!cards || cards.length === 0) {
+    try {
+      const res = await fetch('https://www.amazon.com/auto-deliveries/subscriptionList', {
+        credentials: 'include',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      if (res.ok) {
+        const text = await res.text();
+        const parser = new DOMParser();
+        doc = parser.parseFromString(text, 'text/html');
+        cards = doc.querySelectorAll('[data-subscription-id], .al-subscription-card, [id*="subscriptionCard"], .subscription-card');
+      }
+    } catch (e) {
+      console.warn('Direct fetch of subscriptionList failed:', e);
+    }
+  }
+
   const found = [];
   const seenIds = new Set();
 
-  // Comprehensive selectors covering Amazon S&S desktop variants
-  const cards = document.querySelectorAll(`
-    [data-subscription-id],
-    .al-subscription-card,
-    [id*="subscriptionCard"],
-    .subscription-card,
-    [data-asin],
-    .delivery-item,
-    [data-csa-c-item-id]
-  `);
-
-  cards.forEach(card => {
-    let subId = card.getAttribute('data-subscription-id') ||
-                card.getAttribute('data-asin') ||
-                card.getAttribute('data-csa-c-item-id') ||
-                '';
-
-    if (!subId && card.id && (card.id.includes('sub') || card.id.includes('delivery'))) {
-      subId = card.id;
-    }
-
-    // Fallback: check child links containing subscriptionId=
-    if (!subId) {
-      const link = card.querySelector('a[href*="subscriptionId="], a[href*="subscriptionId%3D"]');
-      if (link) {
-        const m = link.href.match(/subscriptionId(?:=|%3D)([^&]+)/i);
-        if (m) subId = decodeURIComponent(m[1]);
+  function parseDateToTimestamp(dateStr) {
+    if (!dateStr) return Infinity;
+    try {
+      const clean = dateStr
+        .replace(/^(arriving|next delivery|last day to edit|delivery date)[:\s]*/i, '')
+        .replace(/^[A-Za-z]+,\s*/, '')
+        .trim();
+      const curYear = new Date().getFullYear();
+      let ts = Date.parse(`${clean} ${curYear}`);
+      if (isNaN(ts)) ts = Date.parse(clean);
+      if (!isNaN(ts) && ts < Date.now() - 60 * 24 * 3600 * 1000) {
+        ts = Date.parse(`${clean} ${curYear + 1}`);
       }
+      return isNaN(ts) ? Infinity : ts;
+    } catch (e) {
+      return Infinity;
     }
+  }
 
-    if (!subId || seenIds.has(subId)) return;
-    seenIds.add(subId);
+  // Helper: check if ID is an ASIN or invalid token
+  function isInvalidSubId(id) {
+    if (!id) return true;
+    // ASIN pattern: starts with B0 and 10 alphanumeric chars
+    if (/^B0[A-Z0-9]{8}$/i.test(id)) return true;
+    if (id.startsWith('csa-') || id.startsWith('delivery-')) return true;
+    return false;
+  }
 
-    // Title Extraction
-    let title = 'Amazon Subscription Item';
-    const img = card.querySelector('img[alt]');
-    if (img && img.alt && img.alt.trim().length > 6) {
-      title = img.alt.trim();
-    } else {
-      const titleElem = card.querySelector('.product-title, [id*="product-title"], .a-size-base-plus, .a-text-bold, h2, h3, a.a-link-normal');
-      if (titleElem && titleElem.textContent.trim().length > 6) {
-        title = titleElem.textContent.trim();
+  if (cards && cards.length > 0) {
+    cards.forEach(card => {
+      let subId = card.getAttribute('data-subscription-id');
+
+      // Check links inside card
+      if (!subId) {
+        const link = card.querySelector('a[href*="subscriptionId="], a[href*="subscriptionId%3D"]');
+        if (link) {
+          const m = link.href.match(/subscriptionId(?:=|%3D)([\w-]+)/i);
+          if (m) subId = decodeURIComponent(m[1]);
+        }
       }
-    }
 
-    // Clean title string
-    title = title.replace(/\s+/g, ' ').trim();
+      // Check card ID attribute
+      if (!subId && card.id && card.id.includes('subscription')) {
+        const m = card.id.match(/subscription[-_]?([\w-]+)/i);
+        if (m) subId = m[1];
+      }
 
-    // Quantity and Frequency Extraction
-    const textContent = card.textContent.replace(/\s+/g, ' ').trim();
-    let quantity = '1';
-    let frequency = 'Auto-Delivery';
+      if (isInvalidSubId(subId) || seenIds.has(subId)) return;
+      seenIds.add(subId);
 
-    const qtyMatch = textContent.match(/(\d+)\s*(?:unit|item|pack|count|bottle|box)s?/i) ||
-                     textContent.match(/qty[:\s]+(\d+)/i);
-    if (qtyMatch) quantity = qtyMatch[1];
+      // Title Extraction
+      let title = '';
+      const img = card.querySelector('img[alt]');
+      if (img && img.alt && img.alt.trim().length > 6) {
+        title = img.alt.trim();
+      } else {
+        const titleElem = card.querySelector('.product-title, [id*="product-title"], .a-size-medium, .a-size-base-plus, .a-text-bold, h2, h3, a.a-link-normal');
+        if (titleElem && titleElem.textContent.trim().length > 6) {
+          title = titleElem.textContent.trim();
+        }
+      }
+      if (!title || title.length < 5) title = 'Amazon Subscription Item';
+      title = title.replace(/\s+/g, ' ').trim();
 
-    const freqMatch = textContent.match(/deliver(?:y|ed|ies)?\s+(?:every\s+)?(\d+\s+(?:month|week|day)s?)/i) ||
-                      textContent.match(/every\s+(\d+\s+(?:month|week|day)s?)/i) ||
-                      textContent.match(/(\d+\s+(?:month|week|day)s?)/i);
-    if (freqMatch) frequency = freqMatch[1];
+      // Delivery Date / Next Delivery extraction
+      const fullText = card.textContent.replace(/\s+/g, ' ').trim();
+      let deliveryDate = '';
 
-    found.push({
-      subscriptionId: subId,
-      title: title,
-      quantity: quantity,
-      frequency: frequency
+      const dateMatch = fullText.match(/(?:arriving|next delivery|last day to edit|delivery date)[:\s]+([A-Za-z]+,?\s+[A-Za-z]+\s+\d+(?:,\s*\d{4})?)/i) ||
+                        fullText.match(/arriving\s+([A-Za-z]+,?\s+[A-Za-z]+\s+\d+)/i) ||
+                        fullText.match(/arriving\s+([A-Za-z]+\s+\d+)/i) ||
+                        fullText.match(/(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,?\s*\d{4})?/i);
+      if (dateMatch) {
+        deliveryDate = dateMatch[1] || dateMatch[0];
+        deliveryDate = deliveryDate.replace(/^(arriving|next delivery)[:\s]*/i, '').trim();
+      }
+
+      // Quantity and Frequency Extraction
+      let quantity = '1';
+      let frequency = 'Auto-Delivery';
+
+      const qtyMatch = fullText.match(/(\d+)\s*(?:unit|item|pack|count|bottle|box)s?/i) ||
+                       fullText.match(/qty[:\s]+(\d+)/i);
+      if (qtyMatch) quantity = qtyMatch[1];
+
+      const freqMatch = fullText.match(/deliver(?:y|ed|ies)?\s+(?:every\s+)?(\d+\s+(?:month|week|day)s?)/i) ||
+                        fullText.match(/every\s+(\d+\s+(?:month|week|day)s?)/i) ||
+                        fullText.match(/(\d+\s+(?:month|week|day)s?)/i);
+      if (freqMatch) frequency = freqMatch[1];
+
+      found.push({
+        subscriptionId: subId,
+        title: title,
+        quantity: quantity,
+        frequency: frequency,
+        deliveryDate: deliveryDate,
+        dateTimestamp: parseDateToTimestamp(deliveryDate)
+      });
     });
-  });
+  }
+
+  // Fallback: If no cards found but page has subscription links
+  if (found.length === 0) {
+    const subLinks = doc.querySelectorAll('a[href*="subscriptionId="], a[href*="subscriptionId%3D"]');
+    subLinks.forEach(link => {
+      const m = link.href.match(/subscriptionId(?:=|%3D)([\w-]+)/i);
+      if (m) {
+        const subId = decodeURIComponent(m[1]);
+        if (isInvalidSubId(subId) || seenIds.has(subId)) return;
+        seenIds.add(subId);
+
+        let title = link.textContent.trim();
+        const parentBox = link.closest('.a-box, div[class*="subscription"]') || link.parentElement;
+        if ((!title || title.length < 5) && parentBox) {
+          const img = parentBox.querySelector('img[alt]');
+          if (img && img.alt) title = img.alt.trim();
+        }
+        if (!title || title.length < 5) title = 'Amazon Subscription Item';
+
+        found.push({
+          subscriptionId: subId,
+          title: title.replace(/\s+/g, ' ').trim(),
+          quantity: '1',
+          frequency: 'Auto-Delivery',
+          deliveryDate: '',
+          dateTimestamp: Infinity
+        });
+      }
+    });
+  }
 
   return found;
 }
@@ -628,6 +773,12 @@ async function cancelSingleSubscriptionOnAmazon(subscriptionId) {
     }
 
     const formData = new FormData(form);
+
+    // Provide cancellation reason dropdown value to satisfy Amazon validation
+    if (!formData.has('sns-cancellation-dropdown') || !formData.get('sns-cancellation-dropdown')) {
+      formData.set('sns-cancellation-dropdown', 'SnS_MYD_SnsCancelReason_sns_cancel_reason_other');
+    }
+
     const formParams = new URLSearchParams(formData);
 
     const submitResponse = await fetch(form.action, {
@@ -660,25 +811,47 @@ async function cancelSingleSubscriptionOnAmazon(subscriptionId) {
 function loadMockPreviewData() {
   subscriptions = [
     {
-      subscriptionId: 'sub-mock-1',
-      title: 'Bounty Quick-Size Paper Towels, White, 16 Family Rolls = 40 Regular Rolls',
+      subscriptionId: 'sub-stacys-1',
+      title: 'Stacys Snacks Sea Salt Pita Chips, 16 OZ',
       quantity: '1',
-      frequency: 'Every 1 month'
+      frequency: 'Every 1 month',
+      deliveryDate: 'Mon, Oct 19',
+      dateTimestamp: 1792393200000
     },
     {
-      subscriptionId: 'sub-mock-2',
-      title: 'Cascade Platinum Plus ActionPacs Dishwasher Detergent, Fresh Scent, 52 Count',
+      subscriptionId: 'sub-moroccanoil-2',
+      title: 'Moroccanoil Extra Volume Shampoo, 16.9 Fl Oz',
       quantity: '1',
-      frequency: 'Every 2 months'
+      frequency: 'Every 2 months',
+      deliveryDate: 'Thu, Nov 19',
+      dateTimestamp: 1795075200000
     },
     {
-      subscriptionId: 'sub-mock-3',
-      title: 'Tide PODS Free & Gentle Liquid Laundry Detergent Pacs, 81 Count',
+      subscriptionId: 'sub-dreft-3',
+      title: 'Dreft Baby Liquid Laundry Detergent, 128 Fl Oz',
       quantity: '1',
-      frequency: 'Every 3 months'
+      frequency: 'Every 2 months',
+      deliveryDate: 'Thu, Nov 19',
+      dateTimestamp: 1795075200000
+    },
+    {
+      subscriptionId: 'sub-cashews-4',
+      title: '365 by Whole Foods Market, Cashews Unsalted Roasted, 16 Oz',
+      quantity: '1',
+      frequency: 'Every 3 months',
+      deliveryDate: 'Sat, Dec 19',
+      dateTimestamp: 1797667200000
+    },
+    {
+      subscriptionId: 'sub-desenex-5',
+      title: 'Desenex Anti-Fungal Foot Powder, Athletes Foot Treatment',
+      quantity: '1',
+      frequency: 'Every 4 months',
+      deliveryDate: 'Tue, Jan 19',
+      dateTimestamp: 1800345600000
     }
   ];
-  filteredSubscriptions = subscriptions.slice();
+  applyFilterAndSort();
   selectedSubIds = new Set(subscriptions.map(s => s.subscriptionId));
   renderSubscriptionsView();
 }

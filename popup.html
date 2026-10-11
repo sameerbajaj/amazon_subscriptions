@@ -96,13 +96,30 @@
         </div>
       </div>
 
+      <!-- Sort & Filter Bar -->
+      <div class="filter-controls-row">
+        <div class="sort-control">
+          <svg class="sort-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6"/>
+            <line x1="4" y1="12" x2="14" y2="12"/>
+            <line x1="4" y1="18" x2="8" y2="18"/>
+          </svg>
+          <select id="sortSelect" class="sort-select" title="Sort subscriptions">
+            <option value="date-asc" selected>Sort: Upcoming (Soonest)</option>
+            <option value="date-desc">Sort: Latest (Farthest)</option>
+            <option value="title-asc">Sort: Name (A → Z)</option>
+            <option value="title-desc">Sort: Name (Z → A)</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Quick Search (Dynamically shown if > 3 items) -->
       <div class="search-wrap" id="searchWrap" style="display: none;">
-        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"/>
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <input type="text" id="searchFilter" class="search-input" placeholder="Search by name or frequency...">
+        <input type="text" id="searchFilter" class="search-input" placeholder="Search by name, date, frequency...">
       </div>
 
       <!-- Scrollable List -->

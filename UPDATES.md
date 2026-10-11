@@ -1,6 +1,28 @@
-# Amazon Subscription Canceler — v1.2.0 Redesign & Polish
+# Amazon Subscription Canceler — Release History
 
-## Summary of Improvements
+## v1.3.0: Accurate Scraper, Auto-Navigation to `subscriptionList`, & Delivery Sorting
+
+### 1. 🎯 Fixed "All Cancellations Failed" Bug (Root Cause Resolved)
+- **The Problem**: When navigating to `https://www.amazon.com/auto-deliveries`, Amazon defaults to the **"Upcoming delivery days"** calendar tab (shown in the screenshot). On that tab, cards represent delivery bundles and thumbnails contain ASINs (`B0...`), NOT subscription IDs. The old scraper fell back to ASINs and container IDs, which Amazon's `/ajax/cancelSubscription` endpoint rejected because ASINs are not valid subscription IDs!
+- **The Fix**:
+  1. The extension now automatically routes the active Amazon tab directly to **`https://www.amazon.com/auto-deliveries/subscriptionList`** (the actual "Your Subscriptions" tab where real contracts live).
+  2. The in-page scraper now performs a background fetch of `https://www.amazon.com/auto-deliveries/subscriptionList` if on the delivery calendar page.
+  3. Added strict ID validation that rejects ASINs (`B0...`) and non-subscription tokens.
+  4. Form submission now includes Amazon's required cancellation reason dropdown (`sns-cancellation-dropdown: SnS_MYD_SnsCancelReason_sns_cancel_reason_other`).
+
+### 2. 📅 New Sorting Feature: "Most Recent" & Upcoming Delivery
+- **Sort by Delivery Date**:
+  - Automatically extracts the upcoming delivery date (e.g. `Mon, Oct 19`, `Thu, Nov 19`, `Sat, Dec 19`, `Tue, Jan 19`).
+  - Added a dedicated sort dropdown:
+    - 📅 **Sort: Upcoming Delivery (Soonest)** *(Default)* — Puts the subscription delivering/billing soonest at the very top.
+    - 🕒 **Sort: Latest Delivery (Farthest)**
+    - 🔤 **Sort: Product Name (A → Z)**
+    - 🔤 **Sort: Product Name (Z → A)**
+- **Visual Delivery Date Badges**: Each subscription item card now displays a prominent amber badge showing its next delivery date (e.g., `📅 Mon, Oct 19`).
+
+---
+
+## v1.2.0: Redesign & Polish
 
 ### 1. 🎨 Beautiful, Modern UI Overhaul
 - **Native Typography Stack**: Replaced external Google Fonts web requests with Apple's SF Pro system font stack (`-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display"`). Zero network latency, instant 0ms load, and crisp rendering on macOS.
