@@ -580,33 +580,6 @@ function showSummaryView(successCountTotal, failedCountTotal, canceledItems) {
 
 // Scraper function executed within Amazon page context
 async function scanAmazonPageForSubscriptions() {
-  let doc = document;
-
-  // Check if real subscription cards exist on current DOM
-  let cards = doc.querySelectorAll('[data-subscription-id], .al-subscription-card, [id*="subscriptionCard"], .subscription-card');
-
-  // If on the upcoming deliveries calendar page (/auto-deliveries) or no cards found,
-  // fetch the official subscriptionList HTML directly in the background with user credentials!
-  if (!cards || cards.length === 0) {
-    try {
-      const res = await fetch('https://www.amazon.com/auto-deliveries/subscriptionList', {
-        credentials: 'include',
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-      if (res.ok) {
-        const text = await res.text();
-        const parser = new DOMParser();
-        doc = parser.parseFromString(text, 'text/html');
-        cards = doc.querySelectorAll('[data-subscription-id], .al-subscription-card, [id*="subscriptionCard"], .subscription-card');
-      }
-    } catch (e) {
-      console.warn('Direct fetch of subscriptionList failed:', e);
-    }
-  }
-
   const found = [];
   const seenIds = new Set();
 
@@ -632,112 +605,150 @@ async function scanAmazonPageForSubscriptions() {
   // Helper: check if ID is an ASIN or invalid token
   function isInvalidSubId(id) {
     if (!id) return true;
-    // ASIN pattern: starts with B0 and 10 alphanumeric chars
     if (/^B0[A-Z0-9]{8}$/i.test(id)) return true;
     if (id.startsWith('csa-') || id.startsWith('delivery-')) return true;
     return false;
   }
 
-  if (cards && cards.length > 0) {
-    cards.forEach(card => {
-      let subId = card.getAttribute('data-subscription-id');
+  // 1. Primary Strategy: Amazon's new layout puts subscription IDs in [data-edit-url] and Edit links
+  const candidateElements = document.querySelectorAll(`
+    [data-edit-url],
+    a[href*="subscriptionId="],
+    a[href*="subscriptionId%3D"],
+    [data-subscription-id]
+  `);
 
-      // Check links inside card
-      if (!subId) {
-        const link = card.querySelector('a[href*="subscriptionId="], a[href*="subscriptionId%3D"]');
-        if (link) {
-          const m = link.href.match(/subscriptionId(?:=|%3D)([\w-]+)/i);
-          if (m) subId = decodeURIComponent(m[1]);
+  candidateElements.forEach(el => {
+    let subId = '';
+    const editUrl = el.getAttribute('data-edit-url') || '';
+    if (editUrl) {
+      const m = editUrl.match(/subscriptionId=([\w-]+)/i);
+      if (m) subId = m[1];
+    }
+
+    if (!subId && el.href) {
+      const m = el.href.match(/subscriptionId(?:=|%3D)([\w-]+)/i);
+      if (m) subId = decodeURIComponent(m[1]);
+    }
+
+    if (!subId) {
+      subId = el.getAttribute('data-subscription-id') || '';
+    }
+
+    if (isInvalidSubId(subId) || seenIds.has(subId)) return;
+    seenIds.add(subId);
+
+    // Locate the enclosing card container in the grid
+    let card = el.closest('[data-edit-url]') || el.closest('.a-box, [class*="subscription"], [class*="card"], [class*="item"]');
+    if (!card || !card.querySelector('img')) {
+      let curr = el;
+      while (curr && curr !== document.body) {
+        if (curr.querySelector('img') && (curr.textContent.includes('Next delivery') || curr.textContent.includes('unit') || curr.textContent.includes('Edit'))) {
+          card = curr;
+          break;
         }
+        curr = curr.parentElement;
       }
+    }
 
-      // Check card ID attribute
-      if (!subId && card.id && card.id.includes('subscription')) {
-        const m = card.id.match(/subscription[-_]?([\w-]+)/i);
-        if (m) subId = m[1];
-      }
-
-      if (isInvalidSubId(subId) || seenIds.has(subId)) return;
-      seenIds.add(subId);
-
-      // Title Extraction
-      let title = '';
+    // Product Title
+    let title = '';
+    if (card) {
       const img = card.querySelector('img[alt]');
-      if (img && img.alt && img.alt.trim().length > 6) {
+      if (img && img.alt && img.alt.trim().length > 3) {
         title = img.alt.trim();
       } else {
-        const titleElem = card.querySelector('.product-title, [id*="product-title"], .a-size-medium, .a-size-base-plus, .a-text-bold, h2, h3, a.a-link-normal');
-        if (titleElem && titleElem.textContent.trim().length > 6) {
-          title = titleElem.textContent.trim();
+        const heading = card.querySelector('h2, h3, h4, .a-size-base-plus, .a-text-bold, a[href*="/dp/"]');
+        if (heading && heading.textContent.trim().length > 3) {
+          title = heading.textContent.trim();
         }
       }
-      if (!title || title.length < 5) title = 'Amazon Subscription Item';
-      title = title.replace(/\s+/g, ' ').trim();
+    }
+    if (!title && el.textContent && el.textContent.trim().length > 4 && !el.textContent.includes('Edit')) {
+      title = el.textContent.trim();
+    }
+    if (!title || title.length < 3) title = 'Amazon Subscription Item';
+    title = title.replace(/\s+/g, ' ').trim();
 
-      // Delivery Date / Next Delivery extraction
-      const fullText = card.textContent.replace(/\s+/g, ' ').trim();
-      let deliveryDate = '';
+    // Next Delivery Date
+    let deliveryDate = '';
+    const cardText = card ? card.textContent.replace(/\s+/g, ' ').trim() : '';
 
-      const dateMatch = fullText.match(/(?:arriving|next delivery|last day to edit|delivery date)[:\s]+([A-Za-z]+,?\s+[A-Za-z]+\s+\d+(?:,\s*\d{4})?)/i) ||
-                        fullText.match(/arriving\s+([A-Za-z]+,?\s+[A-Za-z]+\s+\d+)/i) ||
-                        fullText.match(/arriving\s+([A-Za-z]+\s+\d+)/i) ||
-                        fullText.match(/(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:,?\s*\d{4})?/i);
-      if (dateMatch) {
-        deliveryDate = dateMatch[1] || dateMatch[0];
-        deliveryDate = deliveryDate.replace(/^(arriving|next delivery)[:\s]*/i, '').trim();
-      }
+    const dateMatch = cardText.match(/Next delivery:?\s*([A-Za-z]+ \d{1,2}(?:, \d{4})?)/i) ||
+                      cardText.match(/Arriving:?\s*([A-Za-z]+,?\s+[A-Za-z]+ \d{1,2})/i) ||
+                      cardText.match(/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:,?\s*\d{4})?/i);
+    if (dateMatch) {
+      deliveryDate = dateMatch[1] || dateMatch[0];
+      deliveryDate = deliveryDate.replace(/^(Next delivery|Arriving)[:\s]*/i, '').trim();
+    }
 
-      // Quantity and Frequency Extraction
-      let quantity = '1';
-      let frequency = 'Auto-Delivery';
+    // Quantity & Frequency
+    let quantity = '1';
+    let frequency = 'Auto-Delivery';
 
-      const qtyMatch = fullText.match(/(\d+)\s*(?:unit|item|pack|count|bottle|box)s?/i) ||
-                       fullText.match(/qty[:\s]+(\d+)/i);
+    const qtyFreqMatch = cardText.match(/(\d+)\s+units?\s+every\s+(\d+\s+(?:month|week|day)s?)/i);
+    if (qtyFreqMatch) {
+      quantity = qtyFreqMatch[1];
+      frequency = `Every ${qtyFreqMatch[2]}`;
+    } else {
+      const qtyMatch = cardText.match(/(\d+)\s+units?/i) || cardText.match(/qty[:\s]+(\d+)/i);
       if (qtyMatch) quantity = qtyMatch[1];
 
-      const freqMatch = fullText.match(/deliver(?:y|ed|ies)?\s+(?:every\s+)?(\d+\s+(?:month|week|day)s?)/i) ||
-                        fullText.match(/every\s+(\d+\s+(?:month|week|day)s?)/i) ||
-                        fullText.match(/(\d+\s+(?:month|week|day)s?)/i);
-      if (freqMatch) frequency = freqMatch[1];
+      const freqMatch = cardText.match(/every\s+(\d+\s+(?:month|week|day)s?)/i) ||
+                        cardText.match(/(\d+\s+(?:month|week|day)s?)/i);
+      if (freqMatch) frequency = `Every ${freqMatch[1]}`;
+    }
 
-      found.push({
-        subscriptionId: subId,
-        title: title,
-        quantity: quantity,
-        frequency: frequency,
-        deliveryDate: deliveryDate,
-        dateTimestamp: parseDateToTimestamp(deliveryDate)
-      });
+    found.push({
+      subscriptionId: subId,
+      title: title,
+      quantity: quantity,
+      frequency: frequency,
+      deliveryDate: deliveryDate,
+      dateTimestamp: parseDateToTimestamp(deliveryDate)
     });
-  }
+  });
 
-  // Fallback: If no cards found but page has subscription links
-  if (found.length === 0) {
-    const subLinks = doc.querySelectorAll('a[href*="subscriptionId="], a[href*="subscriptionId%3D"]');
-    subLinks.forEach(link => {
-      const m = link.href.match(/subscriptionId(?:=|%3D)([\w-]+)/i);
-      if (m) {
-        const subId = decodeURIComponent(m[1]);
-        if (isInvalidSubId(subId) || seenIds.has(subId)) return;
-        seenIds.add(subId);
+  // 2. Global Document HTML Regex (The Gist Discovery Method)
+  // Ensures any subscription IDs on the page are detected even if DOM elements differ
+  const globalRe = /subscriptionId=([\w-]+)/g;
+  let gm;
+  const html = document.documentElement.innerHTML;
+  while ((gm = globalRe.exec(html))) {
+    const subId = gm[1];
+    if (isInvalidSubId(subId) || seenIds.has(subId)) continue;
+    seenIds.add(subId);
 
-        let title = link.textContent.trim();
-        const parentBox = link.closest('.a-box, div[class*="subscription"]') || link.parentElement;
-        if ((!title || title.length < 5) && parentBox) {
-          const img = parentBox.querySelector('img[alt]');
-          if (img && img.alt) title = img.alt.trim();
+    // Try finding element in DOM for this subscription
+    const refEl = document.querySelector(`[data-edit-url*="${subId}"], a[href*="${subId}"]`);
+    let title = 'Amazon Subscription Item';
+    let deliveryDate = '';
+    let quantity = '1';
+    let frequency = 'Auto-Delivery';
+
+    if (refEl) {
+      const refCard = refEl.closest('div[class*="card"], div[class*="item"], .a-box') || refEl.parentElement?.parentElement;
+      if (refCard) {
+        const img = refCard.querySelector('img[alt]');
+        if (img && img.alt && img.alt.length > 3) title = img.alt.trim();
+        const cardText = refCard.textContent.replace(/\s+/g, ' ');
+        const dMatch = cardText.match(/Next delivery:?\s*([A-Za-z]+ \d{1,2})/i);
+        if (dMatch) deliveryDate = dMatch[1];
+        const fMatch = cardText.match(/(\d+)\s+units?\s+every\s+(\d+\s+\w+)/i);
+        if (fMatch) {
+          quantity = fMatch[1];
+          frequency = `Every ${fMatch[2]}`;
         }
-        if (!title || title.length < 5) title = 'Amazon Subscription Item';
-
-        found.push({
-          subscriptionId: subId,
-          title: title.replace(/\s+/g, ' ').trim(),
-          quantity: '1',
-          frequency: 'Auto-Delivery',
-          deliveryDate: '',
-          dateTimestamp: Infinity
-        });
       }
+    }
+
+    found.push({
+      subscriptionId: subId,
+      title: title.replace(/\s+/g, ' ').trim(),
+      quantity: quantity,
+      frequency: frequency,
+      deliveryDate: deliveryDate,
+      dateTimestamp: parseDateToTimestamp(deliveryDate)
     });
   }
 
@@ -746,58 +757,49 @@ async function scanAmazonPageForSubscriptions() {
 
 // In-tab function to cancel single subscription via Amazon's internal AJAX form
 async function cancelSingleSubscriptionOnAmazon(subscriptionId) {
+  function panelHasCancelForm(html) {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return !!div.querySelector("form[name='cancelForm']");
+  }
+
   try {
+    // 1. Fetch cancel modal
     const res = await fetch(
-      `https://www.amazon.com/auto-deliveries/ajax/cancelSubscription?deviceType=desktop&deviceContext=web&subscriptionId=${subscriptionId}&sourcePage=subscriptionList`,
-      {
-        credentials: 'include',
-        headers: {
-          'Accept': 'text/html, */*',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      }
+      `https://www.amazon.com/auto-deliveries/ajax/cancelSubscription?deviceType=desktop&deviceContext=web&subscriptionId=${subscriptionId}`
     );
-
-    const htmlText = await res.text();
-    const tempContainer = document.createElement('div');
-    tempContainer.innerHTML = htmlText;
-    tempContainer.style.display = 'none';
-    document.body.appendChild(tempContainer);
-
-    const form = tempContainer.querySelector("form[name='cancelForm']") ||
-                 tempContainer.querySelector("form[action*='cancel']");
-
-    if (!form) {
-      tempContainer.remove();
+    const panelHtml = await res.text();
+    if (!panelHasCancelForm(panelHtml)) {
       return { success: false, error: 'no_cancel_form_found' };
     }
 
+    // 2. Parse form & prepare cancellation data
+    const div = document.createElement('div');
+    div.innerHTML = panelHtml;
+    const form = div.querySelector("form[name='cancelForm']");
     const formData = new FormData(form);
 
     // Provide cancellation reason dropdown value to satisfy Amazon validation
-    if (!formData.has('sns-cancellation-dropdown') || !formData.get('sns-cancellation-dropdown')) {
-      formData.set('sns-cancellation-dropdown', 'SnS_MYD_SnsCancelReason_sns_cancel_reason_other');
-    }
+    formData.set('sns-cancellation-dropdown', 'SnS_MYD_SnsCancelReason_sns_cancel_reason_other');
 
-    const formParams = new URLSearchParams(formData);
-
-    const submitResponse = await fetch(form.action, {
+    // 3. Submit cancellation request
+    await fetch(form.action, {
       method: form.method || 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: formParams,
-      redirect: 'manual'
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(formData)
     });
 
-    tempContainer.remove();
+    // 4. Verification: cancelled subscriptions stop returning the form
+    const check = await fetch(
+      `https://www.amazon.com/auto-deliveries/ajax/cancelSubscription?deviceType=desktop&deviceContext=web&subscriptionId=${subscriptionId}`
+    );
+    const checkHtml = await check.text();
+    const stillActive = panelHasCancelForm(checkHtml);
 
-    if (submitResponse.status === 0 || submitResponse.status === 302 || submitResponse.status === 200) {
-      return { success: true };
-    }
-
-    return { success: false, status: submitResponse.status };
+    return {
+      success: !stillActive,
+      error: stillActive ? 'still_active_after_submit' : undefined
+    };
 
   } catch (error) {
     if (error && error.message && (error.message.includes('redirect') || error.message.includes('CORS'))) {
@@ -811,43 +813,59 @@ async function cancelSingleSubscriptionOnAmazon(subscriptionId) {
 function loadMockPreviewData() {
   subscriptions = [
     {
-      subscriptionId: 'sub-stacys-1',
-      title: 'Stacys Snacks Sea Salt Pita Chips, 16 OZ',
+      subscriptionId: 'sub-glide-1',
+      title: 'Glide Comfort Plus Mint Floss, 3 Pack',
       quantity: '1',
-      frequency: 'Every 1 month',
-      deliveryDate: 'Mon, Oct 19',
-      dateTimestamp: 1792393200000
-    },
-    {
-      subscriptionId: 'sub-moroccanoil-2',
-      title: 'Moroccanoil Extra Volume Shampoo, 16.9 Fl Oz',
-      quantity: '1',
-      frequency: 'Every 2 months',
-      deliveryDate: 'Thu, Nov 19',
+      frequency: 'Every 5 months',
+      deliveryDate: 'Nov 19',
       dateTimestamp: 1795075200000
     },
     {
-      subscriptionId: 'sub-dreft-3',
-      title: 'Dreft Baby Liquid Laundry Detergent, 128 Fl Oz',
+      subscriptionId: 'sub-ouai-2',
+      title: 'OUAI Detox Shampoo, 32 Fl Oz Refill',
       quantity: '1',
-      frequency: 'Every 2 months',
-      deliveryDate: 'Thu, Nov 19',
+      frequency: 'Every 6 months',
+      deliveryDate: 'Nov 19',
       dateTimestamp: 1795075200000
     },
     {
-      subscriptionId: 'sub-cashews-4',
-      title: '365 by Whole Foods Market, Cashews Unsalted Roasted, 16 Oz',
+      subscriptionId: 'sub-dove-3',
+      title: 'Dove 5Liter PRO Body Wash Pump',
       quantity: '1',
-      frequency: 'Every 3 months',
-      deliveryDate: 'Sat, Dec 19',
+      frequency: 'Every 6 months',
+      deliveryDate: 'Nov 19',
+      dateTimestamp: 1795075200000
+    },
+    {
+      subscriptionId: 'sub-trash-4',
+      title: '105 Count Small Trash Bags, 4 Gallon',
+      quantity: '1',
+      frequency: 'Every 6 months',
+      deliveryDate: 'Nov 19',
+      dateTimestamp: 1795075200000
+    },
+    {
+      subscriptionId: 'sub-quilted-5',
+      title: 'Quilted Northern Toilet Paper Ultra Plush',
+      quantity: '1',
+      frequency: 'Every 6 months',
+      deliveryDate: 'Nov 19',
+      dateTimestamp: 1795075200000
+    },
+    {
+      subscriptionId: 'sub-aquacool-6',
+      title: "Dr. Brown's AquaCool Water Teether, Apple & Pineapple",
+      quantity: '1',
+      frequency: 'Every 6 months',
+      deliveryDate: 'Dec 19',
       dateTimestamp: 1797667200000
     },
     {
-      subscriptionId: 'sub-desenex-5',
-      title: 'Desenex Anti-Fungal Foot Powder, Athletes Foot Treatment',
+      subscriptionId: 'sub-quilted-7',
+      title: 'Quilted Northern Toilet Paper Ultra Plush (Jan batch)',
       quantity: '1',
-      frequency: 'Every 4 months',
-      deliveryDate: 'Tue, Jan 19',
+      frequency: 'Every 6 months',
+      deliveryDate: 'Jan 19',
       dateTimestamp: 1800345600000
     }
   ];
