@@ -1,218 +1,329 @@
-// State management
+/**
+ * UNSUB — Amazon Subscribe & Save Canceler
+ * Lightweight, fast, and automated subscription manager.
+ */
+
+// Application State
+let activeTabId = null;
 let subscriptions = [];
 let filteredSubscriptions = [];
 let selectedSubIds = new Set();
 let isProcessing = false;
 
 // DOM Elements
-const statusSection = document.getElementById('statusSection');
-const statusIcon = document.getElementById('statusIcon');
-const statusTitle = document.getElementById('statusTitle');
-const statusMessage = document.getElementById('statusMessage');
+const headerBadge = document.getElementById('headerBadge');
+
+// Panels
+const navSection = document.getElementById('navSection');
+const navIcon = document.getElementById('navIcon');
+const navTitle = document.getElementById('navTitle');
+const navMessage = document.getElementById('navMessage');
+const navActionBtn = document.getElementById('navActionBtn');
+const navActionBtnText = document.getElementById('navActionBtnText');
+
+const loadingSection = document.getElementById('loadingSection');
+const loadingTitle = document.getElementById('loadingTitle');
+const loadingSubtitle = document.getElementById('loadingSubtitle');
+
+const emptySection = document.getElementById('emptySection');
+const emptyRefreshBtn = document.getElementById('emptyRefreshBtn');
+
 const subscriptionsSection = document.getElementById('subscriptionsSection');
-const subscriptionsList = document.getElementById('subscriptionsList');
 const countBadge = document.getElementById('countBadge');
 const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+const searchWrap = document.getElementById('searchWrap');
 const searchFilter = document.getElementById('searchFilter');
-const actionButtons = document.getElementById('actionButtons');
-const testBtn = document.getElementById('testBtn');
+const subscriptionsList = document.getElementById('subscriptionsList');
 const cancelSelectedBtn = document.getElementById('cancelSelectedBtn');
 const cancelBtnText = document.getElementById('cancelBtnText');
+
 const progressSection = document.getElementById('progressSection');
-const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
+const progressFill = document.getElementById('progressFill');
+const progressCurrent = document.getElementById('progressCurrent');
 const progressLog = document.getElementById('progressLog');
+
 const summarySection = document.getElementById('summarySection');
 const successCount = document.getElementById('successCount');
 const failedCount = document.getElementById('failedCount');
-const resetBtn = document.getElementById('resetBtn');
-const openPageBtn = document.getElementById('openPageBtn');
+const failedStatBox = document.getElementById('failedStatBox');
+const canceledBreakdown = document.getElementById('canceledBreakdown');
+const summaryDoneBtn = document.getElementById('summaryDoneBtn');
 
-// Modal Elements
 const confirmModal = document.getElementById('confirmModal');
 const modalTitle = document.getElementById('modalTitle');
 const modalBody = document.getElementById('modalBody');
 const modalCancelBtn = document.getElementById('modalCancelBtn');
 const modalConfirmBtn = document.getElementById('modalConfirmBtn');
 
-// Initialize
+// Helper to switch view panels cleanly
+function showView(viewId) {
+  const views = [
+    navSection,
+    loadingSection,
+    emptySection,
+    subscriptionsSection,
+    progressSection,
+    summarySection
+  ];
+  views.forEach(v => {
+    if (v) v.style.display = (v.id === viewId) ? 'block' : 'none';
+  });
+}
+
+// Check whether current URL is Amazon S&S
+function isSubscribeAndSaveUrl(url) {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return lower.includes('auto-deliveries') ||
+         lower.includes('subscribe-and-save') ||
+         lower.includes('/sns') ||
+         lower.includes('/hz/subscription');
+}
+
+// Check whether current URL is any Amazon page
+function isAmazonUrl(url) {
+  if (!url) return false;
+  return url.toLowerCase().includes('amazon.com');
+}
+
+// Initialize Extension
 async function init() {
+  // Graceful fallback for local development or preview without chrome.tabs
+  if (typeof chrome === 'undefined' || !chrome.tabs || !chrome.tabs.query) {
+    loadMockPreviewData();
+    return;
+  }
+
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    if (!tab || !tab.url || !tab.url.includes('amazon.com')) {
-      showError(
-        'Not on Amazon',
-        'Please navigate to Amazon Subscribe & Save first.',
+    if (!tab || !tab.url) {
+      showNavPrompt(
+        'Open Amazon',
+        'Navigate to Amazon to view your Subscribe & Save deliveries.',
+        'Open Amazon',
+        false
+      );
+      return;
+    }
+
+    activeTabId = tab.id;
+
+    // Case 1: Not on Amazon at all
+    if (!isAmazonUrl(tab.url)) {
+      showNavPrompt(
+        'Open Amazon Subscriptions',
+        'You are not currently on Amazon. Click below to open your Subscribe & Save manager.',
+        'Open Amazon S&S',
+        false
+      );
+      return;
+    }
+
+    // Case 2: On Amazon, but not on S&S dashboard
+    if (!isSubscribeAndSaveUrl(tab.url)) {
+      showNavPrompt(
+        'Go to Subscriptions Dashboard',
+        'You are on Amazon! Jump directly to your Subscribe & Save manager in one click.',
+        'Go to Subscriptions',
         true
       );
       return;
     }
 
-    if (!tab.url.includes('subscribe-and-save') && !tab.url.includes('auto-deliveries')) {
-      showError(
-        'Wrong Page',
-        'You need to be on the Subscribe & Save dashboard. Click below to open it.',
-        true
-      );
-      return;
-    }
+    // Case 3: Already on S&S page -> Scan subscriptions immediately!
+    await startDetection(tab.id);
 
-    // Detect subscriptions on the page
-    await detectSubscriptions(tab.id);
-
-  } catch (error) {
-    showError('Error', error.message, false);
+  } catch (err) {
+    console.error('Initialization error:', err);
+    showNavPrompt(
+      'Unable to Read Page',
+      err.message || 'Please reload the tab and try again.',
+      'Retry',
+      true
+    );
   }
 }
 
-// Detect subscriptions on the page
-async function detectSubscriptions(tabId) {
+// Display Navigation prompt
+function showNavPrompt(title, message, btnText, isCurrentTabNav) {
+  showView('navSection');
+  navTitle.textContent = title;
+  navMessage.textContent = message;
+  navActionBtnText.textContent = btnText;
+  headerBadge.textContent = 'Setup';
+  headerBadge.classList.remove('active');
+
+  navActionBtn.onclick = async () => {
+    if (isCurrentTabNav && activeTabId) {
+      showView('loadingSection');
+      loadingTitle.textContent = 'Navigating...';
+      loadingSubtitle.textContent = 'Loading your Subscribe & Save dashboard';
+
+      await chrome.tabs.update(activeTabId, { url: 'https://www.amazon.com/auto-deliveries' });
+
+      // Listen for tab load completion
+      const onUpdated = (tabId, info) => {
+        if (tabId === activeTabId && info.status === 'complete') {
+          chrome.tabs.onUpdated.removeListener(onUpdated);
+          setTimeout(() => startDetection(activeTabId), 1000);
+        }
+      };
+      chrome.tabs.onUpdated.addListener(onUpdated);
+
+      // Fallback timeout in case onUpdated was missed
+      setTimeout(() => startDetection(activeTabId), 4000);
+    } else {
+      chrome.tabs.create({ url: 'https://www.amazon.com/auto-deliveries' });
+      window.close();
+    }
+  };
+}
+
+// Start detecting subscriptions on the active tab
+async function startDetection(tabId) {
+  showView('loadingSection');
+  loadingTitle.textContent = 'Scanning Subscriptions...';
+  loadingSubtitle.textContent = 'Detecting active Subscribe & Save items on Amazon';
+  headerBadge.textContent = 'Scanning';
+  headerBadge.classList.remove('active');
+
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
-      func: () => {
-        const subs = [];
-        const seen = new Set();
-
-        // Target all possible subscription card selectors
-        const cards = document.querySelectorAll('[data-subscription-id], .al-subscription-card, [id*="subscriptionCard"], .subscription-card, [data-asin]');
-
-        cards.forEach(card => {
-          let subscriptionId = card.getAttribute('data-subscription-id') ||
-                               card.getAttribute('data-asin') ||
-                               card.id ||
-                               '';
-
-          // If no direct ID, check internal links
-          if (!subscriptionId) {
-            const editLink = card.querySelector('a[href*="subscriptionId="]');
-            if (editLink) {
-              const match = editLink.href.match(/subscriptionId=([^&]+)/);
-              if (match) subscriptionId = match[1];
-            }
-          }
-
-          if (!subscriptionId || seen.has(subscriptionId)) return;
-          seen.add(subscriptionId);
-
-          const text = card.textContent.replace(/\s+/g, ' ').trim();
-
-          // Title extraction with multiple fallbacks
-          let title = 'Amazon Subscription Product';
-          const img = card.querySelector('img[alt]');
-          if (img && img.alt.length > 10) {
-            title = img.alt;
-          } else {
-            const titleEl = card.querySelector('.product-title, [id*="product-title"], .a-size-base-plus, .a-text-bold, h2, h3, a');
-            if (titleEl && titleEl.textContent.trim().length > 10) {
-              title = titleEl.textContent.trim();
-            }
-          }
-
-          // Quantity and frequency extraction
-          let quantity = '1';
-          let frequency = 'Subscription';
-
-          let match = text.match(/(\d+)\s*x\s*(\d+\s+\w+)/i) ||
-                      text.match(/(\d+)\s+units?\s+every\s+(\d+\s+\w+)/i);
-          if (match) {
-            quantity = match[1];
-            frequency = match[2];
-          } else {
-            let freqMatch = text.match(/(\d+\s+(?:month|week|day)s?)/i);
-            if (freqMatch) frequency = freqMatch[1];
-          }
-
-          subs.push({ subscriptionId, title, quantity, frequency });
-        });
-
-        return subs;
-      }
+      func: scanAmazonPageForSubscriptions
     });
 
-    subscriptions = results && results[0] ? results[0].result : [];
+    subscriptions = (results && results[0] && results[0].result) ? results[0].result : [];
 
     if (!subscriptions || subscriptions.length === 0) {
-      showSuccess();
+      showEmptyState();
       return;
     }
 
     filteredSubscriptions = subscriptions.slice();
     selectedSubIds = new Set(subscriptions.map(s => s.subscriptionId));
 
-    showSubscriptions();
+    renderSubscriptionsView();
 
-  } catch (error) {
-    showError('Detection Failed', error.message, false);
+  } catch (err) {
+    console.error('Detection error:', err);
+    showNavPrompt(
+      'Detection Notice',
+      'Make sure you are logged into your Amazon account and viewing your subscriptions.',
+      'Open Subscriptions',
+      true
+    );
   }
 }
 
-// Render Subscriptions List
-function showSubscriptions() {
-  statusSection.style.display = 'none';
-  subscriptionsSection.style.display = 'block';
-  actionButtons.style.display = 'flex';
-
-  renderList();
-  updateCancelButtonText();
+// Empty State Display
+function showEmptyState() {
+  showView('emptySection');
+  headerBadge.textContent = '0 Active';
+  headerBadge.classList.remove('active');
 }
 
-// Render items into DOM based on filter
-function renderList() {
+// Show Subscriptions List
+function renderSubscriptionsView() {
+  showView('subscriptionsSection');
+  headerBadge.textContent = `${subscriptions.length} Active`;
+  headerBadge.classList.add('active');
+
+  // Only show search bar if there are more than 3 subscriptions
+  if (subscriptions.length > 3) {
+    searchWrap.style.display = 'block';
+  } else {
+    searchWrap.style.display = 'none';
+  }
+
+  renderItemList();
+  updateActionButtons();
+}
+
+// Render subscription items into DOM
+function renderItemList() {
   countBadge.textContent = filteredSubscriptions.length;
 
   if (filteredSubscriptions.length === 0) {
-    subscriptionsList.innerHTML = '<div style="text-align: center; padding: 24px; color: var(--text-secondary); font-size: 13px;">No subscriptions match your search.</div>';
+    subscriptionsList.innerHTML = `
+      <div style="text-align: center; padding: 28px 12px; color: var(--text-tertiary); font-size: 12.5px;">
+        No subscriptions match your search.
+      </div>
+    `;
     return;
   }
 
-  subscriptionsList.innerHTML = filteredSubscriptions.map((sub, index) => {
-    const isChecked = selectedSubIds.has(sub.subscriptionId);
-    const cleanTitle = sub.title.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
-    const displayTitle = cleanTitle.substring(0, 75) + (cleanTitle.length > 75 ? '...' : '');
+  subscriptionsList.innerHTML = filteredSubscriptions.map(sub => {
+    const isSelected = selectedSubIds.has(sub.subscriptionId);
+    const cleanTitle = escapeHtml(sub.title);
+    const cleanFrequency = escapeHtml(sub.frequency || 'Auto-Delivery');
+    const cleanQuantity = escapeHtml(sub.quantity || '1');
 
     return `
-      <div class="subscription-item ${isChecked ? 'selected' : ''}" data-sub-id="${escapeHtml(sub.subscriptionId)}">
-        <input type="checkbox" class="sub-checkbox" data-sub-id="${escapeHtml(sub.subscriptionId)}" ${isChecked ? 'checked' : ''}>
-        <div class="subscription-content">
-          <div class="subscription-title">${escapeHtml(displayTitle)}</div>
-          <div class="subscription-meta">${escapeHtml(sub.quantity)} unit · ${escapeHtml(sub.frequency)}</div>
+      <div class="sub-item ${isSelected ? 'selected' : ''}" data-id="${escapeHtml(sub.subscriptionId)}">
+        <input type="checkbox" class="sub-item-check" data-id="${escapeHtml(sub.subscriptionId)}" ${isSelected ? 'checked' : ''}>
+        <div class="sub-item-body">
+          <div class="sub-item-title">${cleanTitle}</div>
+          <div class="sub-item-meta">
+            <span class="sub-meta-pill">📦 ${cleanQuantity} unit</span>
+            <span class="sub-meta-pill">⏱ ${cleanFrequency}</span>
+          </div>
         </div>
-        <div class="subscription-actions">
-          <button class="btn-small btn-cancel" data-sub-id="${escapeHtml(sub.subscriptionId)}">Cancel</button>
+        <div class="sub-item-actions">
+          <button class="btn-icon-trash" data-id="${escapeHtml(sub.subscriptionId)}" title="Cancel this item only">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </button>
         </div>
       </div>
     `;
   }).join('');
 
-  // Checkbox event listeners
-  document.querySelectorAll('.sub-checkbox').forEach(cb => {
-    cb.addEventListener('change', (e) => {
-      const id = e.target.getAttribute('data-sub-id');
-      if (e.target.checked) {
-        selectedSubIds.add(id);
-      } else {
-        selectedSubIds.delete(id);
-      }
-      updateCancelButtonText();
-      updateSelectAllState();
+  // Row selection toggle (clicking body toggles checkbox)
+  subscriptionsList.querySelectorAll('.sub-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.sub-item-actions') || e.target.classList.contains('sub-item-check')) return;
+      const checkbox = item.querySelector('.sub-item-check');
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change'));
     });
   });
 
-  // Individual cancel button listeners
-  document.querySelectorAll('.btn-cancel').forEach(btn => {
+  // Checkbox event listeners
+  subscriptionsList.querySelectorAll('.sub-item-check').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      const id = e.target.getAttribute('data-id');
+      const itemRow = e.target.closest('.sub-item');
+      if (e.target.checked) {
+        selectedSubIds.add(id);
+        itemRow.classList.add('selected');
+      } else {
+        selectedSubIds.delete(id);
+        itemRow.classList.remove('selected');
+      }
+      updateActionButtons();
+      updateSelectAllCheckbox();
+    });
+  });
+
+  // Single Item Cancel Button
+  subscriptionsList.querySelectorAll('.btn-icon-trash').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      const id = e.target.getAttribute('data-sub-id');
+      e.stopPropagation();
+      const id = btn.getAttribute('data-id');
       const targetSub = subscriptions.find(s => s.subscriptionId === id);
       if (targetSub) {
-        promptCancelModal([targetSub]);
+        promptConfirmation([targetSub]);
       }
     });
   });
 }
 
-// Select All Handler
+// Select All Toggle
 if (selectAllCheckbox) {
   selectAllCheckbox.addEventListener('change', (e) => {
     const checked = e.target.checked;
@@ -223,58 +334,57 @@ if (selectAllCheckbox) {
         selectedSubIds.delete(sub.subscriptionId);
       }
     });
-    renderList();
-    updateCancelButtonText();
+    renderItemList();
+    updateActionButtons();
   });
 }
 
-function updateSelectAllState() {
+function updateSelectAllCheckbox() {
   if (!selectAllCheckbox) return;
-  const allFilteredSelected = filteredSubscriptions.length > 0 &&
-    filteredSubscriptions.every(sub => selectedSubIds.has(sub.subscriptionId));
-  selectAllCheckbox.checked = allFilteredSelected;
+  const allSelected = filteredSubscriptions.length > 0 &&
+    filteredSubscriptions.every(s => selectedSubIds.has(s.subscriptionId));
+  selectAllCheckbox.checked = allSelected;
 }
 
-// Search Filter Handler
+// Search Filter Input
 if (searchFilter) {
   searchFilter.addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase().trim();
+    const q = e.target.value.toLowerCase().trim();
     filteredSubscriptions = subscriptions.filter(sub =>
-      sub.title.toLowerCase().includes(query) ||
-      sub.frequency.toLowerCase().includes(query)
+      sub.title.toLowerCase().includes(q) ||
+      (sub.frequency && sub.frequency.toLowerCase().includes(q))
     );
-    renderList();
-    updateSelectAllState();
+    renderItemList();
+    updateSelectAllCheckbox();
   });
 }
 
-function updateCancelButtonText() {
+// Action Button State
+function updateActionButtons() {
   const count = selectedSubIds.size;
   if (cancelBtnText) {
-    cancelBtnText.textContent = count === subscriptions.length ?
-      `Cancel All (${count})` :
-      `Cancel Selected (${count})`;
-  }
-  if (cancelSelectedBtn) {
-    cancelSelectedBtn.disabled = count === 0 || isProcessing;
+    if (count === 0) {
+      cancelBtnText.textContent = 'Select Subscriptions';
+      cancelSelectedBtn.disabled = true;
+    } else if (count === subscriptions.length) {
+      cancelBtnText.textContent = `Cancel All (${count})`;
+      cancelSelectedBtn.disabled = false;
+    } else {
+      cancelBtnText.textContent = `Cancel Selected (${count})`;
+      cancelSelectedBtn.disabled = false;
+    }
   }
 }
 
-// Open Amazon Subscriptions Page
-openPageBtn.addEventListener('click', () => {
-  chrome.tabs.create({
-    url: 'https://www.amazon.com/auto-deliveries'
-  });
-});
+// Confirmation Modal Prompt
+function promptConfirmation(itemsToCancel) {
+  if (isProcessing || !itemsToCancel || itemsToCancel.length === 0) return;
 
-// Modal Confirmation Helper
-function promptCancelModal(subsToCancel) {
-  if (isProcessing || subsToCancel.length === 0) return;
-
-  modalTitle.textContent = `Cancel ${subsToCancel.length} ${subsToCancel.length === 1 ? 'Subscription' : 'Subscriptions'}?`;
-  modalBody.textContent = subsToCancel.length === 1 ?
-    `This will permanently cancel "${subsToCancel[0].title.substring(0, 60)}...".` :
-    `This will automatically process and confirm cancellations for ${subsToCancel.length} selected Amazon subscriptions.`;
+  const count = itemsToCancel.length;
+  modalTitle.textContent = `Cancel ${count} ${count === 1 ? 'Subscription' : 'Subscriptions'}?`;
+  modalBody.textContent = count === 1
+    ? `Are you sure you want to cancel "${itemsToCancel[0].title.substring(0, 50)}..."?`
+    : `This will safely automate cancellation of ${count} selected subscriptions directly on Amazon.`;
 
   confirmModal.style.display = 'flex';
 
@@ -284,117 +394,213 @@ function promptCancelModal(subsToCancel) {
 
   modalConfirmBtn.onclick = async () => {
     confirmModal.style.display = 'none';
-    isProcessing = true;
-    actionButtons.style.display = 'none';
-    subscriptionsSection.style.display = 'none';
-
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    await cancelSubscriptions(tab.id, subsToCancel);
+    await executeCancellation(itemsToCancel);
   };
 }
 
-// Cancel Selected Button
+// Cancel Selected Trigger
 if (cancelSelectedBtn) {
   cancelSelectedBtn.addEventListener('click', () => {
     const selected = subscriptions.filter(s => selectedSubIds.has(s.subscriptionId));
-    promptCancelModal(selected);
+    promptConfirmation(selected);
   });
 }
 
-// Test One Button
-if (testBtn) {
-  testBtn.addEventListener('click', () => {
-    if (subscriptions.length > 0) {
-      promptCancelModal([subscriptions[0]]);
-    }
+// Re-scan trigger on empty state
+if (emptyRefreshBtn) {
+  emptyRefreshBtn.addEventListener('click', () => {
+    if (activeTabId) startDetection(activeTabId);
   });
 }
 
-// Core Batch Cancellation Execution
-async function cancelSubscriptions(tabId, subsToCancel) {
-  progressSection.style.display = 'block';
+// Execute Cancellation Workflow
+async function executeCancellation(itemsToCancel) {
+  if (isProcessing || !itemsToCancel || itemsToCancel.length === 0) return;
+  isProcessing = true;
+
+  showView('progressSection');
   progressLog.innerHTML = '';
+  progressFill.style.width = '0%';
+  progressText.textContent = `0 / ${itemsToCancel.length}`;
 
-  let successfulCancels = 0;
-  let failedCancels = 0;
-  const canceledItems = [];
+  let successCountNum = 0;
+  let failedCountNum = 0;
+  const canceledList = [];
 
-  for (let i = 0; i < subsToCancel.length; i++) {
-    const sub = subsToCancel[i];
-    const progress = Math.round(((i + 1) / subsToCancel.length) * 100);
+  for (let i = 0; i < itemsToCancel.length; i++) {
+    const sub = itemsToCancel[i];
+    const progressPercent = Math.round(((i + 1) / itemsToCancel.length) * 100);
 
-    progressFill.style.width = `${progress}%`;
-    progressText.textContent = `${i + 1} / ${subsToCancel.length}`;
+    progressFill.style.width = `${progressPercent}%`;
+    progressText.textContent = `${i + 1} / ${itemsToCancel.length}`;
+    progressCurrent.textContent = `Canceling: ${sub.title}`;
 
-    addLog(`Canceling: ${sub.title.substring(0, 45)}...`, 'pending');
+    addProgressRow(`Canceling: ${sub.title.substring(0, 36)}...`, 'pending');
 
     try {
       const result = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: cancelSingleSubscription,
+        target: { tabId: activeTabId },
+        func: cancelSingleSubscriptionOnAmazon,
         args: [sub.subscriptionId]
       });
 
-      if (result && result[0] && result[0].result && result[0].result.success) {
-        successfulCancels++;
-        canceledItems.push(sub);
-        addLog(`✓ Canceled: ${sub.title.substring(0, 40)}`, 'success');
+      const res = (result && result[0] && result[0].result) ? result[0].result : null;
+
+      if (res && res.success) {
+        successCountNum++;
+        canceledList.push(sub);
+        addProgressRow(`✓ Canceled: ${sub.title.substring(0, 34)}`, 'success');
+
+        // Remove from local memory state
+        subscriptions = subscriptions.filter(s => s.subscriptionId !== sub.subscriptionId);
+        selectedSubIds.delete(sub.subscriptionId);
       } else {
-        failedCancels++;
-        addLog(`✗ Failed: ${sub.title.substring(0, 40)}`, 'error');
+        failedCountNum++;
+        addProgressRow(`✗ Failed: ${sub.title.substring(0, 34)}`, 'error');
       }
-    } catch (error) {
-      failedCancels++;
-      addLog(`✗ Error: ${sub.title.substring(0, 40)}`, 'error');
+    } catch (err) {
+      console.error('Cancellation error for item:', sub.subscriptionId, err);
+      failedCountNum++;
+      addProgressRow(`✗ Error: ${sub.title.substring(0, 34)}`, 'error');
     }
 
-    // Rate-limiting delay (900ms) between cancellations to prevent rate limiting
-    if (i < subsToCancel.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 900));
+    // Anti-rate-limiting pacing (800ms)
+    if (i < itemsToCancel.length - 1) {
+      await new Promise(r => setTimeout(r, 800));
     }
   }
 
-  // Show summary
-  showSummary(successfulCancels, failedCancels, canceledItems);
-
-  // Auto-refresh Amazon tab after success
-  if (successfulCancels > 0) {
-    setTimeout(async () => {
-      await chrome.tabs.reload(tabId);
-    }, 2000);
-  }
   isProcessing = false;
+  showSummaryView(successCountNum, failedCountNum, canceledList);
 }
 
-// Show Summary Screen
-function showSummary(successful, failed, canceledItems) {
-  progressSection.style.display = 'none';
-  summarySection.style.display = 'block';
-  successCount.textContent = successful;
-  failedCount.textContent = failed;
+// Append a row to the live progress log
+function addProgressRow(message, status) {
+  const row = document.createElement('div');
+  row.className = `stream-row ${status}`;
+  row.textContent = message;
+  progressLog.appendChild(row);
+  progressLog.scrollTop = progressLog.scrollHeight;
+}
 
-  const existingList = summarySection.querySelector('.canceled-list');
-  if (existingList) existingList.remove();
+// Summary View
+function showSummaryView(successCountTotal, failedCountTotal, canceledItems) {
+  showView('summarySection');
+  headerBadge.textContent = 'Completed';
+  headerBadge.classList.remove('active');
 
-  if (canceledItems.length > 0) {
-    const listDiv = document.createElement('div');
-    listDiv.className = 'canceled-list';
-    listDiv.innerHTML = `
-      <h3 class="canceled-list-heading">Canceled Items</h3>
-      <div class="canceled-list-scroll">
-        ${canceledItems.map(item => `
-          <div class="canceled-list-item">
-            ✓ ${escapeHtml(item.title.substring(0, 60))}${item.title.length > 60 ? '...' : ''}
-          </div>
-        `).join('')}
-      </div>
-    `;
-    summarySection.insertBefore(listDiv, summarySection.querySelector('.btn'));
+  successCount.textContent = successCountTotal;
+  failedCount.textContent = failedCountTotal;
+
+  if (failedCountTotal > 0) {
+    failedStatBox.style.display = 'block';
+  } else {
+    failedStatBox.style.display = 'none';
   }
+
+  if (canceledItems && canceledItems.length > 0) {
+    canceledBreakdown.innerHTML = canceledItems.map(item => `
+      <div class="canceled-item-row" title="${escapeHtml(item.title)}">
+        ✓ ${escapeHtml(item.title)}
+      </div>
+    `).join('');
+    canceledBreakdown.style.display = 'block';
+  } else {
+    canceledBreakdown.style.display = 'none';
+  }
+
+  summaryDoneBtn.onclick = async () => {
+    if (activeTabId) {
+      try {
+        await chrome.tabs.reload(activeTabId);
+      } catch (e) {
+        console.warn('Tab reload:', e);
+      }
+    }
+    window.close();
+  };
 }
 
-// Function executed inside Amazon page context to automate cancellation
-async function cancelSingleSubscription(subscriptionId) {
+// Scraper function executed within Amazon page context
+function scanAmazonPageForSubscriptions() {
+  const found = [];
+  const seenIds = new Set();
+
+  // Comprehensive selectors covering Amazon S&S desktop variants
+  const cards = document.querySelectorAll(`
+    [data-subscription-id],
+    .al-subscription-card,
+    [id*="subscriptionCard"],
+    .subscription-card,
+    [data-asin],
+    .delivery-item,
+    [data-csa-c-item-id]
+  `);
+
+  cards.forEach(card => {
+    let subId = card.getAttribute('data-subscription-id') ||
+                card.getAttribute('data-asin') ||
+                card.getAttribute('data-csa-c-item-id') ||
+                '';
+
+    if (!subId && card.id && (card.id.includes('sub') || card.id.includes('delivery'))) {
+      subId = card.id;
+    }
+
+    // Fallback: check child links containing subscriptionId=
+    if (!subId) {
+      const link = card.querySelector('a[href*="subscriptionId="], a[href*="subscriptionId%3D"]');
+      if (link) {
+        const m = link.href.match(/subscriptionId(?:=|%3D)([^&]+)/i);
+        if (m) subId = decodeURIComponent(m[1]);
+      }
+    }
+
+    if (!subId || seenIds.has(subId)) return;
+    seenIds.add(subId);
+
+    // Title Extraction
+    let title = 'Amazon Subscription Item';
+    const img = card.querySelector('img[alt]');
+    if (img && img.alt && img.alt.trim().length > 6) {
+      title = img.alt.trim();
+    } else {
+      const titleElem = card.querySelector('.product-title, [id*="product-title"], .a-size-base-plus, .a-text-bold, h2, h3, a.a-link-normal');
+      if (titleElem && titleElem.textContent.trim().length > 6) {
+        title = titleElem.textContent.trim();
+      }
+    }
+
+    // Clean title string
+    title = title.replace(/\s+/g, ' ').trim();
+
+    // Quantity and Frequency Extraction
+    const textContent = card.textContent.replace(/\s+/g, ' ').trim();
+    let quantity = '1';
+    let frequency = 'Auto-Delivery';
+
+    const qtyMatch = textContent.match(/(\d+)\s*(?:unit|item|pack|count|bottle|box)s?/i) ||
+                     textContent.match(/qty[:\s]+(\d+)/i);
+    if (qtyMatch) quantity = qtyMatch[1];
+
+    const freqMatch = textContent.match(/deliver(?:y|ed|ies)?\s+(?:every\s+)?(\d+\s+(?:month|week|day)s?)/i) ||
+                      textContent.match(/every\s+(\d+\s+(?:month|week|day)s?)/i) ||
+                      textContent.match(/(\d+\s+(?:month|week|day)s?)/i);
+    if (freqMatch) frequency = freqMatch[1];
+
+    found.push({
+      subscriptionId: subId,
+      title: title,
+      quantity: quantity,
+      frequency: frequency
+    });
+  });
+
+  return found;
+}
+
+// In-tab function to cancel single subscription via Amazon's internal AJAX form
+async function cancelSingleSubscriptionOnAmazon(subscriptionId) {
   try {
     const res = await fetch(
       `https://www.amazon.com/auto-deliveries/ajax/cancelSubscription?deviceType=desktop&deviceContext=web&subscriptionId=${subscriptionId}&sourcePage=subscriptionList`,
@@ -407,84 +613,86 @@ async function cancelSingleSubscription(subscriptionId) {
       }
     );
 
-    const cancelPanel = await res.text();
-    const div = document.createElement('div');
-    div.innerHTML = cancelPanel;
-    div.style.display = 'none';
-    document.body.appendChild(div);
+    const htmlText = await res.text();
+    const tempContainer = document.createElement('div');
+    tempContainer.innerHTML = htmlText;
+    tempContainer.style.display = 'none';
+    document.body.appendChild(tempContainer);
 
-    const form = div.querySelector("form[name='cancelForm']") || div.querySelector("form[action*='cancel']");
+    const form = tempContainer.querySelector("form[name='cancelForm']") ||
+                 tempContainer.querySelector("form[action*='cancel']");
+
     if (!form) {
-      div.remove();
-      return { success: false, reason: 'no_form_found' };
+      tempContainer.remove();
+      return { success: false, error: 'no_cancel_form_found' };
     }
 
     const formData = new FormData(form);
-    const formEntries = Object.fromEntries(formData.entries());
+    const formParams = new URLSearchParams(formData);
 
-    const cancelResponse = await fetch(form.action, {
+    const submitResponse = await fetch(form.action, {
       method: form.method || 'POST',
       credentials: 'include',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: new URLSearchParams(formEntries),
+      body: formParams,
       redirect: 'manual'
     });
 
-    div.remove();
+    tempContainer.remove();
 
-    if (cancelResponse.status === 0 || cancelResponse.status === 302 || cancelResponse.status === 200) {
+    if (submitResponse.status === 0 || submitResponse.status === 302 || submitResponse.status === 200) {
       return { success: true };
     }
 
-    return { success: false, status: cancelResponse.status };
+    return { success: false, status: submitResponse.status };
 
   } catch (error) {
-    if (error.message && (error.message.includes('redirect') || error.message.includes('CORS'))) {
+    if (error && error.message && (error.message.includes('redirect') || error.message.includes('CORS'))) {
       return { success: true };
     }
-    return { success: false, error: error.message };
+    return { success: false, error: error ? error.message : 'Unknown error' };
   }
 }
 
-// UI Status Helpers
-function showError(title, message, showButton) {
-  const card = statusSection.querySelector('.status-card');
-  card.className = 'status-card error';
-  statusIcon.textContent = '❌';
-  statusTitle.textContent = title;
-  statusMessage.textContent = message;
-  openPageBtn.style.display = showButton ? 'block' : 'none';
+// Development Mock Preview Loader
+function loadMockPreviewData() {
+  subscriptions = [
+    {
+      subscriptionId: 'sub-mock-1',
+      title: 'Bounty Quick-Size Paper Towels, White, 16 Family Rolls = 40 Regular Rolls',
+      quantity: '1',
+      frequency: 'Every 1 month'
+    },
+    {
+      subscriptionId: 'sub-mock-2',
+      title: 'Cascade Platinum Plus ActionPacs Dishwasher Detergent, Fresh Scent, 52 Count',
+      quantity: '1',
+      frequency: 'Every 2 months'
+    },
+    {
+      subscriptionId: 'sub-mock-3',
+      title: 'Tide PODS Free & Gentle Liquid Laundry Detergent Pacs, 81 Count',
+      quantity: '1',
+      frequency: 'Every 3 months'
+    }
+  ];
+  filteredSubscriptions = subscriptions.slice();
+  selectedSubIds = new Set(subscriptions.map(s => s.subscriptionId));
+  renderSubscriptionsView();
 }
 
-function showSuccess() {
-  const card = statusSection.querySelector('.status-card');
-  card.className = 'status-card success';
-  statusIcon.textContent = '🎉';
-  statusTitle.textContent = 'No Active Subscriptions!';
-  statusMessage.textContent = 'You don\'t have any active Subscribe & Save subscriptions. All clear!';
-  openPageBtn.style.display = 'none';
+// Utility: HTML Escaping
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-function addLog(message, type = 'pending') {
-  const entry = document.createElement('div');
-  entry.className = `log-entry ${type}`;
-  entry.textContent = message;
-  progressLog.appendChild(entry);
-  progressLog.scrollTop = progressLog.scrollHeight;
-}
-
-resetBtn.addEventListener('click', () => {
-  summarySection.style.display = 'none';
-  statusSection.style.display = 'block';
-  isProcessing = false;
-  init();
-});
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-// Start
-init();
+// Initialize on DOM ready
+document.addEventListener('DOMContentLoaded', init);

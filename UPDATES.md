@@ -1,87 +1,39 @@
-# Amazon Subscription Canceler - Updates Complete! ✅
+# Amazon Subscription Canceler — v1.2.0 Redesign & Polish
 
-## New Features Added:
+## Summary of Improvements
 
-### 1. **"Open Subscriptions Page" Button** 🔗
-- When not on Amazon or wrong page, shows a button
-- Clicking opens the Subscribe & Save page in a new tab
-- Makes it super easy for users to get to the right place
+### 1. 🎨 Beautiful, Modern UI Overhaul
+- **Native Typography Stack**: Replaced external Google Fonts web requests with Apple's SF Pro system font stack (`-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display"`). Zero network latency, instant 0ms load, and crisp rendering on macOS.
+- **Polished Command Center Aesthetic**: Clean dark obsidian design (`#0B0C10` base, `#13161F` surface cards, subtle 1px border `rgba(255, 255, 255, 0.06)`).
+- **Refined Information Architecture**:
+  - Compact brand header with high-contrast Amazon Amber logo mark, app title ("Unsub"), and live active status badge.
+  - Subscriptions cards featuring clean 2-line title clamps, metadata pills (`📦 1 unit`, `⏱ Every 1 month`), and inline quick actions.
+  - Smooth progress bar with active item status and live checkmark feed.
+  - Celebratory completion view with summary stats and checkmarked list of canceled items.
 
-### 2. **No Subscriptions Success State** 🎉
-- When 0 subscriptions detected, shows celebratory message
-- "No Active Subscriptions! You're all set!"
-- Green success card with party emoji
+### 2. ⚡ Reduced Unnecessary Steps & Friction
+- **Seamless 1-Click Navigation**:
+  - Previous behavior: If not on the Subscribe & Save dashboard, showed a "Wrong Page" error and forced opening a new tab, which immediately dismissed the extension popup.
+  - New behavior: Automatically detects if the current tab is an Amazon page. Shows a single, friendly "Go to Subscriptions Dashboard" prompt that navigates the *current tab directly* and immediately scans once loaded—zero re-opening required.
+- **Eliminated Competing Buttons & Confusion**:
+  - Removed the confusing "Test One" button that competed directly with "Cancel Selected".
+  - Cleaned up the primary action into a single, confident button: `Cancel All (N)` when all items are selected, or `Cancel Selected (N)` when filtering.
+  - Individual items can be canceled in 1 click using the inline trash icon on each card.
+- **Smart Adaptive Toolbar**:
+  - Search bar automatically hides when there are 3 or fewer items, eliminating vertical clutter on short lists.
+- **Fast, Non-Intrusive Confirmations**:
+  - Clear modal confirmation card with blurred backdrop, explicit item counts, and single-click confirmation.
 
-### 3. **Individual Cancel Buttons** ❌
-- Each subscription has its own "Cancel" button
-- Shows confirmation dialog before canceling
-- Button shows "Canceling..." during process
-- Item smoothly animates out and disappears after cancel
-- Updates subscription count in real-time
+### 3. 🖼️ Real Extension Icons Added
+- Previously, `icon16.png`, `icon48.png`, and `icon128.png` were placeholder SVG files renamed to `.png` (which Chrome failed to render properly).
+- Created brand-new, pixel-perfect raster RGBA PNG icons across all required resolutions:
+  - `icon16.png` (16×16 px)
+  - `icon32.png` (32×32 px — Retina toolbar)
+  - `icon48.png` (48×48 px)
+  - `icon128.png` (128×128 px — Chrome Web Store / Extension manager)
+- Custom design: Amazon-style delivery parcel encircled by Subscribe & Save circular arrows, featuring a crisp coral unsubscribe indicator.
+- Updated `manifest.json` to v1.2.0 with all icon sizes declared.
 
-### 4. **Auto-Refresh After All Canceled** 🔄
-- When all subscriptions are canceled (individually or bulk)
-- Automatically refreshes subscription data after 1-3 seconds
-- Shows the "No Active Subscriptions!" success message
-- Provides closure to the user
-
-### 5. **Canceled Items Summary** 📋
-- After bulk cancel, shows list of what was canceled
-- Scrollable list with checkmarks
-- Shows up to 60 characters of each product name
-- Clean, readable format
-
-## User Flow:
-
-### Scenario 1: Not on Amazon
-1. User clicks extension
-2. Sees error: "Not on Amazon"
-3. Clicks "Open Subscriptions Page" button
-4. New tab opens to Subscribe & Save page
-5. Clicks extension again → sees subscriptions
-
-### Scenario 2: Has Subscriptions
-1. User clicks extension
-2. Sees list of all subscriptions with individual Cancel buttons
-3. Options:
-   - **Individual**: Click Cancel on specific items → Confirm → Item disappears
-   - **Bulk**: Click "Cancel All" → Confirm → Progress bar → Summary
-4. After all canceled → Auto-refreshes → Shows success message
-
-### Scenario 3: No Subscriptions
-1. User clicks extension
-2. Sees: "🎉 No Active Subscriptions! You're all set!"
-3. User is happy 😊
-
-## Technical Improvements:
-
-- ✅ Form-based cancellation (more reliable)
-- ✅ Individual cancel with confirmation
-- ✅ Smooth animations for item removal
-- ✅ Auto-refresh to show current state
-- ✅ Canceled items list in summary
-- ✅ Better error messages with actionable buttons
-- ✅ Real-time subscription count updates
-
-## Files Modified:
-
-1. `popup.html` - Added "Open Page" button
-2. `popup.css` - Added styles for individual cancel buttons and animations
-3. `popup.js` - Added all new functionality:
-   - `handleIndividualCancel()` - Individual cancellation with animation
-   - `showSuccess()` - No subscriptions success state
-   - `showSummary()` - Enhanced summary with canceled items list
-   - Auto-refresh logic
-   - Open page button handler
-
-## Ready to Use! 🚀
-
-The extension is now feature-complete with:
-- Beautiful UI
-- Individual + bulk cancel
-- Confirmations for safety
-- Auto-refresh for current state
-- Helpful navigation buttons
-- Detailed summaries
-
-Users will love it! 💜
+### 4. 🛠️ Critical Bug Fixes
+- Fixed a fatal `SyntaxError: Unexpected end of input` in `popup.js` caused by an unclosed `escapeHtml` function, which previously prevented the popup script from executing.
+- Added graceful offline / local development preview fallback when testing outside of the extension runtime.

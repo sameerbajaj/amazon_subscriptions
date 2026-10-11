@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Unsub — Amazon Subscribe & Save Canceler",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Easily view and bulk-cancel Amazon Subscribe & Save subscriptions in one click.",
   "author": "Luminos Labs",
   "homepage_url": "https://sameerbajaj.com/tools/amazon-subscriptions/",
@@ -16,12 +16,14 @@
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icon16.png",
+      "32": "icon32.png",
       "48": "icon48.png",
       "128": "icon128.png"
     }
   },
   "icons": {
     "16": "icon16.png",
+    "32": "icon32.png",
     "48": "icon48.png",
     "128": "icon128.png"
   }
