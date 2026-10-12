@@ -1,5 +1,14 @@
 # Amazon Subscription Canceler — Release History
 
+## v1.3.1: Premium App Icon & Brand Redesign
+- **High-End Apple / Chrome Pro Icon**:
+  - Redesigned the entire extension icon from scratch with a radiant Amazon Amber-to-Sunset squircle (`#FFB300` → `#FF7D00` → `#E23800`), Apple-grade specular glass rim, and warm volumetric drop shadow.
+  - Eliminated visual clutter (clunky badges, low-contrast inner box) in favor of a bold, mathematically symmetric Subscribe & Save cycle ring in porcelain white paired with a deep obsidian center cancel emblem.
+  - Pixel-perfect legibility down to 16×16 px in the Chrome browser toolbar on both Light and Dark OS themes.
+  - Exported crisp, 32-bit RGBA raster assets at 16×16, 32×32, 48×48, and 128×128 resolutions directly from the vector master [`icon.svg`](icon.svg).
+- **Unified Popup Header**:
+  - Synchronized popup header branding to render the high-res 32×32 px icon with matching border-radius and amber glow.
+
 ## v1.3.0: Accurate Scraper, Auto-Navigation to `subscriptionList`, & Delivery Sorting
 
 ### 1. 🎯 Fixed "All Cancellations Failed" Bug (Root Cause Resolved)

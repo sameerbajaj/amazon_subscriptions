@@ -98,17 +98,22 @@ body {
   gap: 10px;
 }
 
-.brand-icon {
+.brand-icon,
+.brand-icon-img {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
+  display: block;
+  box-shadow: 0 2px 8px var(--amber-glow);
+  flex-shrink: 0;
+}
+
+.brand-icon {
   background: linear-gradient(135deg, #FFA41C 0%, #FF5200 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #FFFFFF;
-  box-shadow: 0 2px 8px var(--amber-glow);
-  flex-shrink: 0;
 }
 
 .brand-text h1 {

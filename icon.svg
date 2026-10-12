@@ -1,71 +1,52 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Background Gradient -->
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1B1E28" />
+    <!-- Premium Amazon Amber-to-Sunset Radiant Gradient -->
+    <linearGradient id="amberBg" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#FFB300" />
+      <stop offset="48%" stop-color="#FF7D00" />
+      <stop offset="100%" stop-color="#E23800" />
+    </linearGradient>
+
+    <!-- Specular Top Rim Highlight & Ambient Inset -->
+    <linearGradient id="specularRim" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255, 255, 255, 0.55)" />
+      <stop offset="35%" stop-color="rgba(255, 255, 255, 0.15)" />
+      <stop offset="100%" stop-color="rgba(0, 0, 0, 0.3)" />
+    </linearGradient>
+
+    <!-- Deep Obsidian Center Badge -->
+    <linearGradient id="centerBadgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E2230" />
       <stop offset="100%" stop-color="#0E1017" />
     </linearGradient>
 
-    <!-- Amazon Amber/Orange Gradient -->
-    <linearGradient id="amzGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FFA41C" />
-      <stop offset="50%" stop-color="#FF8A00" />
-      <stop offset="100%" stop-color="#FF5200" />
-    </linearGradient>
-
-    <!-- Coral Danger Gradient -->
-    <linearGradient id="coralGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FF5A5A" />
-      <stop offset="100%" stop-color="#E11D48" />
-    </linearGradient>
-
-    <!-- Subtle Inner Border Highlight -->
-    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="rgba(255, 255, 255, 0.22)" />
-      <stop offset="100%" stop-color="rgba(255, 255, 255, 0.04)" />
-    </linearGradient>
+    <!-- Volumetric Warm Drop Shadow -->
+    <filter id="symbolShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3.5" flood-color="#551400" flood-opacity="0.45" />
+    </filter>
   </defs>
 
-  <!-- App Icon Squircle Background -->
-  <rect x="3" y="3" width="122" height="122" rx="28" fill="url(#bgGrad)" />
-  <rect x="3" y="3" width="122" height="122" rx="28" fill="none" stroke="url(#borderGrad)" stroke-width="2.5" />
+  <!-- Squircle Canvas (Apple macOS / Chrome Extension Pro Standard) -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#amberBg)" />
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="none" stroke="url(#specularRim)" stroke-width="2.2" />
+  <rect x="6.5" y="6.5" width="115" height="115" rx="25.5" fill="none" stroke="rgba(255, 255, 255, 0.22)" stroke-width="1" />
 
-  <!-- Center Subscribe & Save Recurring Arrows & Box -->
-  <g id="main-symbol">
-    <!-- Top Delivery Cycle Arc -->
-    <path d="M 36 62 C 36 44 48 32 66 32 C 80 32 92 40 96 52" 
-          fill="none" 
-          stroke="url(#amzGrad)" 
-          stroke-width="8" 
-          stroke-linecap="round" />
-    <!-- Top Arrow Head -->
-    <polygon points="98,42 106,56 90,56" fill="#FFA41C" />
+  <!-- Core S&S Loop & Cancel Badge Symbol -->
+  <g filter="url(#symbolShadow)">
+    <!-- Top Arc with Aerodynamic Arrowhead (Subscribe & Save Cycle) -->
+    <path d="M 33 63 C 33 45.8 46.8 32 64 32 C 77.5 32 89 40.8 93 53" 
+          stroke="#FFFFFF" stroke-width="9.5" stroke-linecap="round" />
+    <path d="M 83.5 53.5 L 94 55 L 97 44.5" 
+          fill="none" stroke="#FFFFFF" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round" />
 
-    <!-- Bottom Delivery Cycle Arc -->
-    <path d="M 92 68 C 92 86 80 98 62 98 C 48 98 36 90 32 78" 
-          fill="none" 
-          stroke="url(#amzGrad)" 
-          stroke-width="8" 
-          stroke-linecap="round" />
-    <!-- Bottom Arrow Head -->
-    <polygon points="30,88 22,74 38,74" fill="#FF5200" />
+    <!-- Bottom Arc with Aerodynamic Arrowhead -->
+    <path d="M 95 65 C 95 82.2 81.2 96 64 96 C 50.5 96 39 87.2 35 75" 
+          stroke="#FFFFFF" stroke-width="9.5" stroke-linecap="round" />
+    <path d="M 44.5 74.5 L 34 73 L 31 83.5" 
+          fill="none" stroke="#FFFFFF" stroke-width="9.5" stroke-linecap="round" stroke-linejoin="round" />
 
-    <!-- Center Amazon Package Box -->
-    <rect x="47" y="50" width="34" height="30" rx="5" fill="#252A38" stroke="#3E4558" stroke-width="2.5" />
-    <!-- Box Flap Line -->
-    <path d="M 47 58 L 64 66 L 81 58" stroke="#3E4558" stroke-width="2" fill="none" stroke-linejoin="round" />
-    <!-- Amazon Smile Line on Box -->
-    <path d="M 54 70 C 58 74 70 74 74 70" stroke="#FFA41C" stroke-width="2.2" stroke-linecap="round" fill="none" />
-  </g>
-
-  <!-- Cancel / Unsub Badge (Top Right) -->
-  <g id="cancel-badge">
-    <!-- Outer Glow / Shadow Ring -->
-    <circle cx="98" cy="28" r="19" fill="#0E1017" />
-    <!-- Coral Badge Circle -->
-    <circle cx="98" cy="28" r="16.5" fill="url(#coralGrad)" stroke="rgba(255,255,255,0.25)" stroke-width="1.5" />
-    <!-- Crisp White Cancel 'X' -->
-    <line x1="92" y1="22" x2="104" y2="34" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" />
-    <line x1="104" y1="22" x2="92" y2="34" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" />
+    <!-- Center Obsidian Unsub/Cancel Emblem -->
+    <circle cx="64" cy="64" r="17" fill="url(#centerBadgeGrad)" stroke="rgba(255, 255, 255, 0.22)" stroke-width="1.5" />
+    <path d="M 57.5 57.5 L 70.5 70.5 M 70.5 57.5 L 57.5 70.5" stroke="#FFFFFF" stroke-width="3.8" stroke-linecap="round" />
   </g>
 </svg>
