@@ -79,6 +79,40 @@ function isAmazonUrl(url) {
   return url.toLowerCase().includes('amazon.com');
 }
 
+// Synchronously update both Chrome action badge and the Amazon page tab favicon
+async function updateBadges(tabId, count) {
+  if (!tabId) return;
+
+  const validCount = Math.max(0, Number(count) || 0);
+
+  // 1. Chrome Toolbar Action Badge
+  try {
+    if (typeof chrome !== 'undefined' && chrome.action) {
+      const badgeText = validCount > 0 ? (validCount > 99 ? '99+' : String(validCount)) : '';
+      await chrome.action.setBadgeText({ tabId, text: badgeText });
+      await chrome.action.setBadgeBackgroundColor({ tabId, color: '#E11D48' });
+      if (chrome.action.setBadgeTextColor) {
+        await chrome.action.setBadgeTextColor({ tabId, color: '#FFFFFF' });
+      }
+    }
+  } catch (err) {
+    console.debug('Could not set action badge:', err);
+  }
+
+  // 2. In-Tab Amazon Favicon Badge
+  try {
+    if (typeof chrome !== 'undefined' && chrome.scripting) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: updateAmazonTabFavicon,
+        args: [validCount]
+      });
+    }
+  } catch (err) {
+    console.debug('Could not update tab favicon:', err);
+  }
+}
+
 // Initialize Extension
 async function init() {
   // Graceful fallback for local development or preview without chrome.tabs
@@ -207,6 +241,7 @@ async function startDetection(tabId) {
 
     if (!subscriptions || subscriptions.length === 0) {
       showEmptyState();
+      updateBadges(tabId, 0);
       return;
     }
 
@@ -214,6 +249,7 @@ async function startDetection(tabId) {
     selectedSubIds = new Set(subscriptions.map(s => s.subscriptionId));
 
     renderSubscriptionsView();
+    updateBadges(tabId, subscriptions.length);
 
   } catch (err) {
     console.error('Detection error:', err);
@@ -231,6 +267,9 @@ function showEmptyState() {
   showView('emptySection');
   headerBadge.textContent = '0 Active';
   headerBadge.classList.remove('active');
+  if (activeTabId) {
+    updateBadges(activeTabId, 0);
+  }
 }
 
 // Show Subscriptions List
@@ -510,6 +549,9 @@ async function executeCancellation(itemsToCancel) {
         // Remove from local memory state
         subscriptions = subscriptions.filter(s => s.subscriptionId !== sub.subscriptionId);
         selectedSubIds.delete(sub.subscriptionId);
+
+        // Update toolbar badge and tab favicon count in real-time
+        updateBadges(activeTabId, subscriptions.length);
       } else {
         failedCountNum++;
         const failReason = res && res.error ? ` (${res.error})` : '';
@@ -545,6 +587,9 @@ function showSummaryView(successCountTotal, failedCountTotal, canceledItems) {
   showView('summarySection');
   headerBadge.textContent = 'Completed';
   headerBadge.classList.remove('active');
+  if (activeTabId) {
+    updateBadges(activeTabId, subscriptions.length);
+  }
 
   successCount.textContent = successCountTotal;
   failedCount.textContent = failedCountTotal;
@@ -807,6 +852,145 @@ async function cancelSingleSubscriptionOnAmazon(subscriptionId) {
     }
     return { success: false, error: error ? error.message : 'Unknown error' };
   }
+}
+
+// In-tab function to dynamically update the Amazon tab's favicon with an active subscription counter badge
+function updateAmazonTabFavicon(count) {
+  const BADGE_ATTR = 'data-unsub-badged';
+  const ORIG_ATTR = 'data-unsub-original-href';
+
+  // 1. If 0 or negative, restore original favicon
+  if (!count || count <= 0) {
+    const badged = document.querySelector(`link[${BADGE_ATTR}]`);
+    if (badged) badged.remove();
+    const origLink = document.querySelector(`link[${ORIG_ATTR}]`);
+    if (origLink) {
+      origLink.rel = 'icon';
+      origLink.removeAttribute(ORIG_ATTR);
+    }
+    return;
+  }
+
+  // 2. Locate or remember original favicon
+  let existingFavicon = document.querySelector('link[rel*="icon"]:not([' + BADGE_ATTR + '])');
+  let originalHref = '/favicon.ico';
+  if (existingFavicon) {
+    originalHref = existingFavicon.href || '/favicon.ico';
+    if (!existingFavicon.hasAttribute(ORIG_ATTR)) {
+      existingFavicon.setAttribute(ORIG_ATTR, originalHref);
+    }
+    // Set to alternate so browser prioritizes our badged link
+    existingFavicon.rel = 'alternate icon';
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+
+  const drawBadgeAndApply = () => {
+    // Format text
+    const text = count > 99 ? '99+' : String(count);
+    ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const textMetrics = ctx.measureText(text);
+    const textW = textMetrics.width;
+    const badgeW = Math.max(14, Math.round(textW + 6));
+    const badgeH = 14;
+    const x = 32 - badgeW;
+    const y = 0;
+    const radius = 7;
+
+    // Outer subtle dark halo / shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x - 0.5, y, badgeW + 1, badgeH + 1, radius);
+    } else {
+      ctx.rect(x - 0.5, y, badgeW + 1, badgeH + 1);
+    }
+    ctx.fill();
+
+    // Vibrant Coral-Red Notification Badge
+    ctx.fillStyle = '#E11D48';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, badgeW, badgeH, radius);
+    } else {
+      ctx.rect(x, y, badgeW, badgeH);
+    }
+    ctx.fill();
+
+    // Crisp White Rim
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Centered White Text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + (badgeW / 2), y + (badgeH / 2) + 0.5);
+
+    try {
+      const dataUrl = canvas.toDataURL('image/png');
+      let badgedLink = document.querySelector(`link[${BADGE_ATTR}]`);
+      if (badgedLink) {
+        badgedLink.remove();
+      }
+      badgedLink = document.createElement('link');
+      badgedLink.rel = 'shortcut icon';
+      badgedLink.type = 'image/png';
+      badgedLink.setAttribute(BADGE_ATTR, 'true');
+      badgedLink.href = dataUrl;
+      document.head.appendChild(badgedLink);
+    } catch (err) {
+      console.warn('Unsub: Failed to export badged favicon dataURL', err);
+    }
+  };
+
+  const fallbackRender = () => {
+    ctx.clearRect(0, 0, 32, 32);
+    // Draw clean Amazon dark squircle tile
+    ctx.fillStyle = '#232F3E';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(1, 1, 30, 30, 6);
+    else ctx.rect(1, 1, 30, 30);
+    ctx.fill();
+
+    // Amazon smile curve
+    ctx.strokeStyle = '#FF9900';
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(16, 12, 10, 0.2 * Math.PI, 0.8 * Math.PI);
+    ctx.stroke();
+
+    drawBadgeAndApply();
+  };
+
+  const fallbackTimer = setTimeout(() => {
+    fallbackRender();
+  }, 1200);
+
+  img.onload = () => {
+    clearTimeout(fallbackTimer);
+    try {
+      ctx.drawImage(img, 0, 0, 32, 32);
+      drawBadgeAndApply();
+    } catch (e) {
+      fallbackRender();
+    }
+  };
+
+  img.onerror = () => {
+    clearTimeout(fallbackTimer);
+    fallbackRender();
+  };
+
+  img.src = originalHref;
 }
 
 // Development Mock Preview Loader

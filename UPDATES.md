@@ -1,5 +1,15 @@
 # Amazon Subscription Canceler — Release History
 
+## v1.4.0: Live Active Subscription Counter Badge (Favicon & Toolbar)
+- **Dual Live Badging**:
+  - **Chrome Toolbar Extension Icon Badge**: Automatically displays the active subscription count directly on top of the extension icon in Chrome's toolbar (e.g. `12`) using Amazon Amber/Coral `#E11D48` notification styling.
+  - **Amazon Browser Tab Favicon Badge**: Dynamically badges the open Amazon tab's `<link rel="icon">` in the browser tab bar with the active subscription count, making the tab recognizable even with dozens of tabs open.
+- **Real-Time Live Decrement**:
+  - Automatically updates and counts down in real-time as each item is canceled (in bulk or individually).
+  - Cleanly clears and restores the original favicon and clears toolbar badge when all subscriptions are canceled (0 active).
+- **Zero Extra Permissions**:
+  - Runs on-demand when the popup opens and scans, utilizing existing `activeTab` and `scripting` capabilities.
+
 ## v1.3.1: Premium App Icon & Brand Redesign
 - **High-End Apple / Chrome Pro Icon**:
   - Redesigned the entire extension icon from scratch with a radiant Amazon Amber-to-Sunset squircle (`#FFB300` → `#FF7D00` → `#E23800`), Apple-grade specular glass rim, and warm volumetric drop shadow.
