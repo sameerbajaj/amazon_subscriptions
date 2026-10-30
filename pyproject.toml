@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amazon-subscriptions-audit"
+version = "1.0.0"
+description = "Audit and cancel Amazon Subscribe & Save subscriptions"
+readme = "README.md"
+requires-python = ">=3.8"
+license = "MIT"
+authors = [
+    {name = "Sameer Bajaj", email = "sameer@sameerbajaj.com"}
+]
+keywords = ["amazon", "subscriptions", "subscribe-and-save", "cancel", "audit"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+
+[project.scripts]
+amazon-subscriptions-audit = "amazon_subscriptions_audit:main"
+
+[tool.setuptools]
+py-modules = ["amazon_subscriptions_audit"]
+
+[project.urls]
+Homepage = "https://sameerbajaj.com/tools/amazon-subscriptions/"
+Website = "https://sameerbajaj.com"
+Repository = "https://github.com/sameerbajaj/amazon_subscriptions"
