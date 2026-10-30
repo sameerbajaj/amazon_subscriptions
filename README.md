@@ -164,3 +164,7 @@ Inspired by community scripts for Amazon subscription management. Improved with 
 ---
 
 Made with ❤️ for people tired of managing subscriptions manually
+
+---
+
+Part of the open-source tools collection by [Sameer Bajaj](https://sameerbajaj.com). Learn more on the [project page](https://sameerbajaj.com/tools/amazon-subscriptions/).

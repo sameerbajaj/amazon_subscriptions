@@ -1,0 +1,12 @@
+{
+  "name": "amazon-subscriptions",
+  "version": "1.4.0",
+  "description": "Easily view and bulk-cancel Amazon Subscribe & Save subscriptions in one click.",
+  "homepage": "https://sameerbajaj.com/tools/amazon-subscriptions/",
+  "author": "Sameer Bajaj (https://sameerbajaj.com)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sameerbajaj/amazon_subscriptions.git"
+  }
+}
