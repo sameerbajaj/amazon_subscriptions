@@ -47,7 +47,7 @@
 ---
 
 ## 🛠️ Key Files
-- [`manifest.json`](file:///Users/sameerbajaj/PARA/Projects/dev/small%20utilities/amazon_subscriptions/manifest.json): MV3 manifest with 16, 32, 48, 128px PNG icons.
-- [`popup.html`](file:///Users/sameerbajaj/PARA/Projects/dev/small%20utilities/amazon_subscriptions/popup.html): Popup structure with sticky toolbar, sort controls, and confirmation sheets.
-- [`popup.css`](file:///Users/sameerbajaj/PARA/Projects/dev/small%20utilities/amazon_subscriptions/popup.css): Linear/macOS dark command center styling.
-- [`popup.js`](file:///Users/sameerbajaj/PARA/Projects/dev/small%20utilities/amazon_subscriptions/popup.js): Scraper, sorter, and verified form cancellation execution.
+- [`manifest.json`](manifest.json): MV3 manifest with 16, 32, 48, 128px PNG icons.
+- [`popup.html`](popup.html): Popup structure with sticky toolbar, sort controls, and confirmation sheets.
+- [`popup.css`](popup.css): Linear/macOS dark command center styling.
+- [`popup.js`](popup.js): Scraper, sorter, and verified form cancellation execution.
